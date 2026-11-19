@@ -61,6 +61,7 @@ std::atomic<bool> cinematic_active{false};
 // the GPU null (fences only). Never destroyed: process exit tears the device down.
 std::atomic<Gpu::Renderer*> live{nullptr};
 unsigned configured_anisotropy{};
+bool configured_motion_blur = true;
 bool render_off = std::getenv("GOW3_NULL_GPU") != nullptr;
 size_t notes_logged = 0;
 
@@ -225,6 +226,7 @@ Gpu::Renderer* Renderer() {
     }
     if (DebugEnabled()) Log(Gpu::PieceHash::UsesAes() ? "Renderer piece hash: AES-NI" : "Renderer piece hash: XXH3");
     r->SetAnisotropy(configured_anisotropy);
+    r->SetMotionBlurEnabled(configured_motion_blur);
     GuestMemory::Install();
     r->SetTracker([p = r.get()](u64 lo, u64 hi) { return GuestMemory::Track(*p, lo, hi); });
     r->SetReadback(GuestMemory::Store);
@@ -386,7 +388,7 @@ void Run(const std::stop_token& token) {
 } // namespace
 
 // ---- Lifecycle and submission ----
-void Configure(unsigned anisotropy) { configured_anisotropy = anisotropy; }
+void Configure(unsigned anisotropy, bool motion_blur) { configured_anisotropy = anisotropy, configured_motion_blur = motion_blur; }
 
 void Start() {
     CpuProbe::Start();

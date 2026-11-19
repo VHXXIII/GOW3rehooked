@@ -125,11 +125,13 @@ constexpr Help help[]{
     {"Graphics", "Texture Filtering", "Trilinear is the original. 4x to 16x anisotropic keeps textures sharp at steep angles, at a small GPU cost."},
     {"Graphics", "Post Effects", "CMAA2 smooths jagged edges after the image is drawn, at a small GPU cost."},
     {"Graphics", "Scaler", "How the image is resized to your display. Bilinear is the fastest. FSR 1 (enlarging) and Lanczos 2 (shrinking) keep more detail."},
+    {"Graphics", "Motion Blur", "The game's motion blur: streaks along fast movement. Off keeps the image sharp while the camera or objects move."},
     {"Other", "Skip Opening Logos", "Starts the game at the title menu."},
     {"Other", "Skip Videos with X", "Press Cross to skip any video or cutscene."},
     {"Other", "Shader Mechanism", "AOT prepares the shaders before you play, so stutter is rare. JIT translates each shader when it first appears, which can stutter."},
     {"Other", "Shader Recompilation", "How shaders are translated during gameplay. Async: no stutter, but an object can appear a moment late. Sync: nothing appears late, but a hitch is possible."},
     {"Other", "Lazy AOT", "On: the first shader preparation is split over up to four launches. Off: it is done in one."},
+    {"Other", "Speakers", "The layout the game's 7.1 sound is sent to your sound device in. Auto follows the device: stereo, 5.1 or 7.1. Choose 5.1 or 7.1 if surround is not used automatically. Applies after the restart."},
 };
 constexpr int help_count = int(std::size(help));
 

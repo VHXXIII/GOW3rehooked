@@ -1430,10 +1430,13 @@ void Gen::Mimg(const Inst& i) {
         const Id x = FSub(ex, CF(0.5f)), y = FSub(ey, CF(0.5f));
         const Id length = E(tF32, GLSLstd450Sqrt, FAdd(FMul(x, x), FMul(y, y)));
         const Id scaled = FMul(FMul(CF(2.f), length), rate), factor = FDiv(rate, FMax(CF(1.f), scaled)), active = FGt(rate, CF(1.f));
+        // A rate of zero is the Motion Blur setting turned off: no velocity, so every sample stays on its own pixel.
+        const Id off = LNot(FGt(rate, CF(0.f)));
         // The two UNORM codes nearest zero carry no reliable sub-step direction; do not amplify their bias when clamping.
         const auto component = [&](Id original, Id v) {
             const Id neutral = Bool(spv::OpFOrdLessThanEqual, FAbs(v), CF(0.5f / 255.f + 1e-7f));
-            return SelF(LAnd(active, LNot(LAnd(FGt(scaled, CF(1.f)), neutral))), FAdd(FMul(v, factor), CF(0.5f)), original);
+            const Id compensated = SelF(LAnd(active, LNot(LAnd(FGt(scaled, CF(1.f)), neutral))), FAdd(FMul(v, factor), CF(0.5f)), original);
+            return SelF(off, CF(0.5f), compensated);
         };
         e = R(spv::OpCompositeConstruct, tV4F, component(ex, x), component(ey, y),
               Extract(tF32, e, 2), Extract(tF32, e, 3));
@@ -1673,7 +1676,10 @@ void Gen::OneInst(const Inst& i, bool last, bool loop) {
         });
     // The companion change removes that compensation from the blur strength in the same draw.
     if (motion_blur && i.pc == 16)
-        St(Sr(0), Uf(FDiv(Fu(LdU(Sr(0))), Fu(TableAt(res + u32(a.slots.size()))))));
+    {
+        const Id rate = Fu(TableAt(res + u32(a.slots.size())));
+        St(Sr(0), Uf(FDiv(Fu(LdU(Sr(0))), SelF(FGt(rate, CF(0.f)), rate, CF(1.f)))));  // not by the zero of Motion Blur off
+    }
     auto w = [&](u32 r) {
         const auto it = sreg.find(r);
         return it != sreg.end() && wrote(it->second);

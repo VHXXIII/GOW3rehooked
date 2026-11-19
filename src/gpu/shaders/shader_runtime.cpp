@@ -429,7 +429,7 @@ void Renderer::Impl::SpecifySlots(Prepared& p) {
 }
 
 u64 ProgramKey(Gcn::Stage stage, u64 code_hash, u64 fetch_hash, u32 rsrc2, bool probe, bool boom) {
-    if (stage == Gcn::Stage::Pixel && code_hash == Gcn::MotionBlurCodeHash()) code_hash ^= 0x6d6f74696f6e3031ull;
+    if (stage == Gcn::Stage::Pixel && code_hash == Gcn::MotionBlurCodeHash()) code_hash ^= 0x6d6f74696f6e3032ull;
     const u64 hashes[2]{code_hash, fetch_hash};
     // Probe and exploded-vertex variants apart: each writes its own record, which only its frames push.
     return ::Gpu::PieceHash::ShaderKey(hashes, sizeof(hashes), (u64)stage << 32 | rsrc2 | (u64)probe << 62 | (boom ? (u64)(0x100 | Gcn::BoomClip()) << 40 | (u64)Gcn::BoomParamLimit() << 49 | 1ull << 63 | 1ull << 62 : 0));  // bit 62: the record carries the constant bank (never with a probe)

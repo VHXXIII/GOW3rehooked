@@ -10,6 +10,10 @@ namespace Libraries::AudioOut {
 
 struct PortOut;
 
+/// Speaker layout the game's 7.1 mix is sent to the sound device in (set from config.cfg `speakers`
+/// before any port opens): 0 automatic (the device's channel count), 1 stereo, 2 5.1, 3 7.1.
+void SetSpeakerMode(int mode);
+
 class PortBackend {
 public:
     virtual ~PortBackend() = default;

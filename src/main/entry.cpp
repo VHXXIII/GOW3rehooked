@@ -12,6 +12,7 @@
 #include "orbis/core/emulator_settings.h"
 #include "orbis/core/file_sys/fs.h"
 #include "orbis/internals/libs.h"
+#include "orbis/internals/audio/audioout_backend.h"
 #include "orbis/core/linker.h"
 #include "patches/hooks.h"
 #include "patches/memory_patcher.h"
@@ -99,7 +100,8 @@ int Gow3Run(const wchar_t* executable_directory, const wchar_t* game_directory, 
         SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
         SetUnhandledExceptionFilter(ReportUnhandledCrash);
         const auto config = LoadConfig(app / PortDir::Settings / "config.cfg");
-        GpuThread::Configure(config.anisotropy);
+        GpuThread::Configure(config.anisotropy, config.motion_blur);
+        Libraries::AudioOut::SetSpeakerMode(int(config.speakers));
         if (DebugEnabled()) Log(std::format("Configuration: {} at {:.2f} fps, skip intro {}, skip videos {}, mode {}",
                         Resolutions[config.resolution].name, GameFrameRate(config.fps), config.skip_intro, config.skip_videos,
                         static_cast<int>(config.display_mode)));

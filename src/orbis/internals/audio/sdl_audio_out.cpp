@@ -26,6 +26,14 @@
 
 namespace Libraries::AudioOut {
 
+namespace {
+std::atomic<int> speaker_mode{0};
+} // namespace
+
+void SetSpeakerMode(int mode) {
+    speaker_mode.store(mode, std::memory_order_relaxed);
+}
+
 // Volume constants
 constexpr float VOLUME_0DB = 32768.0f; // 1 << 15
 constexpr float INV_VOLUME_0DB = 1.0f / VOLUME_0DB;
@@ -285,30 +293,53 @@ private:
             return false;
         }
 
+        // The layout a 7.1 port is sent in: the setting, or with Auto the sound device's own.
         SDL_AudioSpec dev_spec{};
-        if (num_channels >= 6 &&
-            SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), &dev_spec, nullptr) &&
-            dev_spec.channels >= 1 && dev_spec.channels <= 2) {
-            ps4_downmix = true;
-            internal_buffer_size = buffer_frames * sizeof(float) * 2;
-            LOG_INFO(Lib_AudioOut, "Stereo device: using PS4-accurate {}ch->stereo downmix",
-                     num_channels);
+        const bool have_device =
+            SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), &dev_spec, nullptr);
+        const int device_channels = have_device ? dev_spec.channels : 0;
+        int out_channels = static_cast<int>(num_channels);
+        if (num_channels >= 6) {
+            switch (speaker_mode.load(std::memory_order_relaxed)) {
+            case 1:
+                out_channels = 2;
+                break;
+            case 2:
+                out_channels = 6;
+                break;
+            case 3:
+                out_channels = 8;
+                break;
+            default:
+                out_channels = device_channels <= 0 ? 8 : device_channels <= 2 ? 2
+                               : device_channels <= 7 ? 6 : 8;
+                break;
+            }
+            LOG_INFO(Lib_AudioOut, "Speakers: setting {}, device {} ch, sending {} ch",
+                     speaker_mode.load(std::memory_order_relaxed), device_channels, out_channels);
+        }
+        if (out_channels != static_cast<int>(num_channels)) {
+            ps4_downmix = out_channels == 2;
+            fold_51 = out_channels == 6;
+            internal_buffer_size = buffer_frames * sizeof(float) * out_channels;
+            LOG_INFO(Lib_AudioOut, "{}: using the {}ch->{}ch fold", ps4_downmix ? "Stereo" : "5.1",
+                     num_channels, out_channels);
 
             SDL_DestroyAudioStream(stream);
-            const SDL_AudioSpec stereo_fmt = {
+            const SDL_AudioSpec folded_fmt = {
                 .format = SDL_AUDIO_F32LE,
-                .channels = 2,
+                .channels = static_cast<u8>(out_channels),
                 .freq = static_cast<int>(sample_rate),
             };
-            stream = SDL_OpenAudioDeviceStream(dev_id, &stereo_fmt, nullptr, nullptr);
+            stream = SDL_OpenAudioDeviceStream(dev_id, &folded_fmt, nullptr, nullptr);
             if (!stream) {
                 LOG_ERROR(Lib_AudioOut, "Failed to recreate SDL audio stream: {}", SDL_GetError());
                 return false;
             }
         }
 
-        // Configure channel mapping (input is already stereo when folding)
-        if (!ps4_downmix && !ConfigureChannelMap()) {
+        // Configure channel mapping (input is already folded when folding)
+        if (!ps4_downmix && !fold_51 && !ConfigureChannelMap()) {
             SDL_DestroyAudioStream(stream);
             stream = nullptr;
             return false;
@@ -439,7 +470,54 @@ private:
         }
     }
 
+    // Folds one 7.1 frame (in the game's order: FL FR FC LFE then the back pair and the side pair, or with the
+    // standard layout the side pair and then the back pair) to the 5.1 order SDL expects (FL FR FC LFE SL SR):
+    // front, center and LFE as they are, each surround takes the side channel plus the back one at -3 dB.
+    // The sum can pass full scale, so it goes through a soft limiter instead of a hard clip.
+    static float SoftLimit(float x) {
+        constexpr float knee = 0.8f, room = 1.0f - knee;
+        const float a = x < 0 ? -x : x;
+        if (a <= knee) {
+            return x;
+        }
+        if (!(a < 1e6f)) {
+            return a != a ? 0.0f : (x < 0 ? -1.0f : 1.0f);
+        }
+        const float y = std::min(1.0f, knee + (a - knee) / (1.0f + (a - knee) / room));
+        return x < 0 ? -y : y;
+    }
+
+    template <bool Std, bool Float>
+    static void Fold51(const void* src, void* dst, u32 frames, const float*) {
+        constexpr int back_l = Std ? 6 : 4, back_r = Std ? 7 : 5;
+        constexpr int side_l = Std ? 4 : 6, side_r = Std ? 5 : 7;
+        float* d = static_cast<float*>(dst);
+        for (u32 i = 0; i < frames; i++) {
+            float s[8];
+            if constexpr (Float) {
+                std::memcpy(s, static_cast<const float*>(src) + (i << 3), sizeof(s));
+            } else {
+                const s16* in = static_cast<const s16*>(src) + (i << 3);
+                for (int c = 0; c < 8; c++) {
+                    s[c] = in[c] * INV_VOLUME_0DB;
+                }
+            }
+            float* o = d + i * 6;
+            o[0] = SoftLimit(s[FL]);
+            o[1] = SoftLimit(s[FR]);
+            o[2] = SoftLimit(s[FC]);
+            o[3] = SoftLimit(s[LF]);
+            o[4] = SoftLimit(s[side_l] + DOWNMIX_SURROUND * s[back_l]);
+            o[5] = SoftLimit(s[side_r] + DOWNMIX_SURROUND * s[back_r]);
+        }
+    }
+
     bool SelectConverter() {
+        if (fold_51) {
+            convert = is_float ? (is_std ? &Fold51<true, true> : &Fold51<false, true>)
+                               : (is_std ? &Fold51<true, false> : &Fold51<false, false>);
+            return true;
+        }
         if (ps4_downmix) {
             convert = is_float ? &DownmixF32_8CHToStereoPS4 : &DownmixS16_8CHToStereoPS4;
             return true;
@@ -640,6 +718,8 @@ private:
     const bool is_std;
     // Set when the output device is stereo and we fold 5.1/7.1 ourselves.
     bool ps4_downmix{false};
+    // Set when the 7.1 mix is folded to 5.1 for the device (Speakers setting, or a 5.1 device on Auto).
+    bool fold_51{false};
     const std::array<int, 8> channel_layout;
 
     alignas(64) u64 period_us{0};

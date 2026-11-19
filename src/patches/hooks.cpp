@@ -783,8 +783,8 @@ std::vector<u8> patched;
 u32 main_labels_at{}, main_clips_at{}, main_initial_target{};
 bool continue_available{};
 
-enum Option : u32 { Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Msaa, Filtering, PostEffects, Scaler,
-                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, OptionCount, Empty = OptionCount };
+enum Option : u32 { Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Msaa, Filtering, PostEffects, Scaler, MotionBlurOption,
+                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, SpeakersOption, OptionCount, Empty = OptionCount };
 struct Setting {
     std::string_view label;
     std::span<const std::string_view> values;
@@ -794,20 +794,20 @@ struct Setting {
 constexpr std::string_view resolutions[]{"480p", "720p", "1080p", "1440p", "1800p", "4K"}, frame_rates[]{"30 FPS", "40 FPS", "60 FPS", "120 FPS", "240 FPS", "480 FPS"},
     display_modes[]{"Windowed", "Borderless", "Exclusive"}, vsync_modes[]{"FIFO", "Mailbox", "Off"}, on_off[]{"Off", "On"},
     msaa[]{"Off", "2x", "4x"}, filtering[]{"Trilinear", "4x", "8x", "16x"}, anti_aliasing[]{"Off", "CMAA2"},
-    scalers[]{"Bilinear / Bilinear", "FSR 1 / Lanczos 2"},
+    scalers[]{"Bilinear / Bilinear", "FSR 1 / Lanczos 2"}, speaker_modes[]{"Auto", "Stereo", "5.1", "7.1"},
     compilation[]{"Sync", "Async"}, mechanisms[]{"JIT", "AOT"};
 Setting settings[OptionCount]{
     {"Resolution", resolutions, 2, 201}, {"Frame Rate", frame_rates, 2, 206}, {"Display Mode", display_modes, 1, 237},
     {"VRR", on_off, 0, 80}, {"VSync", vsync_modes, 0, 106}, {"NVIDIA Reflex", on_off, 0, 260},
     {"MSAA", msaa, 1, 106}, {"Texture Filtering", filtering, 0, 319}, {"Post Effects", anti_aliasing, 0, 235},
-    {"Scaler", scalers, 0, 116},
+    {"Scaler", scalers, 0, 116}, {"Motion Blur", on_off, 1, 215},
     {"Skip Opening Logos", on_off, 0, 350}, {"Skip Videos with X", on_off, 0, 330}, {"4K Cinematics", on_off, 0, 260},
-    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}
+    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}, {"Speakers", speaker_modes, 0, 165}
 };
 constexpr Option pages[][kRows - 1]{
     {Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Empty, Empty, Empty},
-    {Msaa, Filtering, PostEffects, Scaler, Empty, Empty, Empty, Empty, Empty},
-    {SkipIntro, SkipVideos, Mechanism, Recompilation, LazyAot, Empty, Empty, Empty, Empty}
+    {Msaa, Filtering, PostEffects, Scaler, MotionBlurOption, Empty, Empty, Empty, Empty},
+    {SkipIntro, SkipVideos, Mechanism, Recompilation, LazyAot, SpeakersOption, Empty, Empty, Empty}
 };
 constexpr std::string_view page_names[]{"Display", "Graphics", "Other"};
 constexpr float page_widths[]{198.f, 234.f, 181.f};
@@ -831,6 +831,7 @@ float ValueWidth(std::string_view value) {
         {"Off", 67}, {"On", 57}, {"2x", 42}, {"4x", 43}, {"8x", 43}, {"16x", 57},
         {"Trilinear", 178}, {"CMAA2", 129}, {"Bilinear / Bilinear", 344}, {"FSR 1 / Lanczos 2", 305},
         {"Sync", 92}, {"Async", 114}, {"JIT", 50}, {"AOT", 77},
+        {"Auto", 88}, {"Stereo", 125}, {"5.1", 62}, {"7.1", 62},  // estimated, like " FPS"
     };
     const auto it = std::ranges::find(widths, value, &std::pair<std::string_view, float>::first);
     return it != std::end(widths) ? it->second : kMaxValueWidth;
@@ -870,6 +871,8 @@ Config SelectedConfig() {
     config.anisotropy = AnisotropyLevels[settings[Filtering].index];
     config.anti_aliasing = AntiAliasing(settings[PostEffects].index);
     config.scaling_filter = ScalingFilter(settings[Scaler].index);
+    config.motion_blur = settings[MotionBlurOption].index;
+    config.speakers = Speakers(settings[SpeakersOption].index);
     config.skip_intro = settings[SkipIntro].index;
     config.skip_videos = settings[SkipVideos].index;
     config.cinematics_4k = settings[Cinematics4K].index;
@@ -890,6 +893,8 @@ void Configure(const Config& config) {
     settings[Filtering].index = u32(std::ranges::find(AnisotropyLevels, config.anisotropy) - AnisotropyLevels.begin());
     settings[PostEffects].index = u32(config.anti_aliasing);
     settings[Scaler].index = u32(config.scaling_filter);
+    settings[MotionBlurOption].index = config.motion_blur;
+    settings[SpeakersOption].index = u32(config.speakers);
     settings[SkipIntro].index = config.skip_intro;
     settings[SkipVideos].index = config.skip_videos;
     settings[Cinematics4K].index = config.cinematics_4k;
