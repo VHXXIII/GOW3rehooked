@@ -14,6 +14,8 @@
 #include "orbis/internals/audio/audioout.h"
 #include "orbis/internals/audio/audioout_backend.h"
 #include "gpu/gpu_thread.h"
+#include "main/host.h"
+#include <format>
 #include "orbis/internals/kernel/threads.h"
 
 // SIMD support detection
@@ -317,6 +319,16 @@ private:
             }
             LOG_INFO(Lib_AudioOut, "Speakers: setting {}, device {} ch, sending {} ch",
                      speaker_mode.load(std::memory_order_relaxed), device_channels, out_channels);
+        }
+        // gow3.log keeps warnings only, so this goes there directly: what the game opened and what the device does.
+        {
+            const char* dev_label = SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(stream));
+            Gow3::Log(std::format(
+                "Audio port {}: {} ch {} {}, {} frames; device '{}' {} ch {} Hz; Speakers setting {} -> {} ch{}",
+                static_cast<int>(type), num_channels, is_float ? "float" : "s16", is_std ? "std" : "native",
+                buffer_frames, dev_label ? dev_label : "?", device_channels, have_device ? dev_spec.freq : 0,
+                speaker_mode.load(std::memory_order_relaxed), out_channels,
+                out_channels == 6 ? " (5.1 fold)" : out_channels == 2 ? " (stereo fold)" : ""));
         }
         if (out_channels != static_cast<int>(num_channels)) {
             ps4_downmix = out_channels == 2;
