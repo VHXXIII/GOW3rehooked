@@ -529,7 +529,7 @@ s32 PS4_SYSV_ABI sceAudioOutGetPortState(s32 handle, OrbisAudioOutPortState* sta
     case OrbisAudioOutPort::Bgm:
     case OrbisAudioOutPort::Audio3d:
         state->output = ORBIS_AUDIO_OUT_STATE_OUTPUT_CONNECTED_PRIMARY;
-        state->channel = port->format_info.num_channels > 2 ? 2 : port->format_info.num_channels;
+        state->channel = static_cast<u8>(ReportedOutputChannels(port->format_info.num_channels));
         break;
     case OrbisAudioOutPort::Voice:
     case OrbisAudioOutPort::Personal:

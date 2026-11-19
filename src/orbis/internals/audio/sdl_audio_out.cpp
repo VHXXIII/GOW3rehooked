@@ -30,10 +30,26 @@ namespace Libraries::AudioOut {
 
 namespace {
 std::atomic<int> speaker_mode{0};
+std::atomic<int> device_surround{-1}; // -1 until a 7.1 port has opened, then 0 stereo device, 1 surround
 } // namespace
 
 void SetSpeakerMode(int mode) {
     speaker_mode.store(mode, std::memory_order_relaxed);
+}
+
+int ReportedOutputChannels(int port_channels) {
+    if (port_channels <= 2) {
+        return port_channels;
+    }
+    switch (speaker_mode.load(std::memory_order_relaxed)) {
+    case 1:
+        return 2;
+    case 2:
+    case 3:
+        return 8;
+    default:
+        return device_surround.load(std::memory_order_relaxed) > 0 ? 8 : 2;
+    }
 }
 
 // Volume constants
@@ -344,6 +360,9 @@ private:
             }
             LOG_INFO(Lib_AudioOut, "Speakers: setting {}, device {} ch, sending {} ch",
                      speaker_mode.load(std::memory_order_relaxed), device_channels, out_channels);
+        }
+        if (num_channels >= 6) {
+            device_surround.store(out_channels > 2 ? 1 : 0, std::memory_order_relaxed);
         }
         // gow3.log keeps warnings only, so this goes there directly: what the game opened and what the device does.
         {

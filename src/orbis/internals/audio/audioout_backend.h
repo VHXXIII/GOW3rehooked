@@ -14,6 +14,11 @@ struct PortOut;
 /// before any port opens): 0 automatic (the device's channel count), 1 stereo, 2 5.1, 3 7.1.
 void SetSpeakerMode(int mode);
 
+/// The channel count sceAudioOutGetPortState reports for a port that carries `port_channels` channels. The game
+/// mixes for what it is told the output is: a 7.1 port reported as stereo only gets front left and right.
+/// Surround (5.1 or 7.1, set or the device's) is reported as 8, because the game's mix is 7.1 and is folded afterwards.
+int ReportedOutputChannels(int port_channels);
+
 class PortBackend {
 public:
     virtual ~PortBackend() = default;
