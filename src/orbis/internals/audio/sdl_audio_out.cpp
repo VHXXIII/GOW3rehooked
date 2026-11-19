@@ -95,6 +95,9 @@ public:
         const u64 trace_start = Gow3::GpuThread::VideoTraceEnabled() ? Gow3::GpuThread::VideoTraceClock() : 0;
         UpdateVolumeIfChanged();
         const u64 current_time = Kernel::sceKernelGetProcessTime();
+        if (num_channels == 8 && peak_lines < 40) {
+            TrackPeaks(ptr);
+        }
         convert(ptr, internal_buffer, buffer_frames, nullptr);
         HandleTiming(current_time);
 
@@ -113,6 +116,28 @@ public:
         }
 
         last_output_time.store(current_time, std::memory_order_release);
+    }
+
+    // Diagnostics: the loudest sample per input channel (in the game's own order), logged to gow3.log about every
+    // two seconds for the first 80 s, to tell whether the game sends anything on the rear channels at all.
+    void TrackPeaks(const void* ptr) {
+        for (u32 i = 0; i < buffer_frames; i++) {
+            for (u32 c = 0; c < 8; c++) {
+                const float v = is_float ? static_cast<const float*>(ptr)[i * 8 + c]
+                                         : static_cast<const s16*>(ptr)[i * 8 + c] * INV_VOLUME_0DB;
+                const float a = v < 0 ? -v : v;
+                peaks[c] = a > peaks[c] ? a : peaks[c];
+            }
+        }
+        if (++peak_calls >= 400) {
+            peak_calls = 0;
+            peak_lines++;
+            Gow3::Log(std::format(
+                "Audio levels (game order, {}): {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} | {:.3f} {:.3f}",
+                is_std ? "FL FR FC LFE | SL SR | BL BR" : "FL FR FC LFE | BL BR | SL SR", peaks[0], peaks[1],
+                peaks[2], peaks[3], peaks[4], peaks[5], peaks[6], peaks[7]));
+            std::fill(std::begin(peaks), std::end(peaks), 0.0f);
+        }
     }
 
     void SetVolume(const std::array<int, 8>& ch_volumes) override {
@@ -732,6 +757,9 @@ private:
     bool ps4_downmix{false};
     // Set when the 7.1 mix is folded to 5.1 for the device (Speakers setting, or a 5.1 device on Auto).
     bool fold_51{false};
+    float peaks[8]{};
+    u32 peak_calls{0};
+    u32 peak_lines{0};
     const std::array<int, 8> channel_layout;
 
     alignas(64) u64 period_us{0};
