@@ -359,7 +359,9 @@ void Renderer::SetAnisotropy(unsigned level) {
     vkGetPhysicalDeviceProperties(d->pd, &properties);
     d->anisotropy = std::min(float(level), properties.limits.maxSamplerAnisotropy);
 }
+void Renderer::SetMotionBlurEnabled(bool enabled) { d->motion_blur_enabled = enabled; }
 void Renderer::SetMotionBlurFrameTime(float seconds) {
+    if (!d->motion_blur_enabled) { d->motion_blur_rate = 0.f; return; }
     d->motion_blur_rate = seconds >= 0.00001f && std::isfinite(seconds) ? std::max(1.f, 1.f / (59.94f * seconds)) : 1.f;
 }
 const std::vector<const std::uint32_t*>* Renderer::Effects() const { return d->effects_whole ? &d->effects : nullptr; }

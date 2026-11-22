@@ -139,6 +139,7 @@ public:
     bool Init(bool validation, std::string& error);  // own instance and device; defined only by tools/framecap
     bool Init(const External& device, std::string& error);
     void SetAnisotropy(unsigned level);
+    void SetMotionBlurEnabled(bool enabled);
     void SetMotionBlurFrameTime(float seconds);
 
     // ---- Guest memory, occlusion queries and display surfaces ----

@@ -11,6 +11,7 @@ enum class DisplayMode { Windowed, Borderless, Fullscreen };
 enum class VSync { Fifo, Mailbox, Off }; // swapchain present mode
 enum class AntiAliasing { None, Cmaa2 };
 enum class ScalingFilter { Bilinear, Fsr1 };
+enum class Speakers { Auto, Stereo, Surround51, Surround71 }; // the layout the game's 7.1 mix is sent to the sound device in
 enum class ShaderRecompilation { Sync, Async };
 enum class ShaderMechanism { Jit, Aot };
 // Output resolutions of the resolution patches (God_of_War_III_Remastered.xml, kvicken + cuesta4).
@@ -73,6 +74,8 @@ struct Config {
     bool nvidia_reflex = false;
     AntiAliasing anti_aliasing = AntiAliasing::None;
     ScalingFilter scaling_filter = ScalingFilter::Bilinear;
+    bool motion_blur = true;                // false: the game's motion blur pass gets no velocity (gcn_spirv.cpp)
+    Speakers speakers = Speakers::Auto;     // Auto follows the sound device's channel count
     ShaderRecompilation shader_recompilation = ShaderRecompilation::Async;
     ShaderMechanism shader_mechanism = ShaderMechanism::Aot;
     bool lazy_aot = true;                   // AOT builds a fixed quarter of all WAD variants per eligible launch

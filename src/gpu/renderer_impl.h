@@ -129,6 +129,7 @@ struct Renderer::Impl {
     VkPhysicalDevice pd = VK_NULL_HANDLE;
     float anisotropy = 0;
     float motion_blur_rate = 1;
+    bool motion_blur_enabled = true;  // the Motion Blur setting; off makes the rate zero (shader: no velocity)
     bool blend_interlock = false;
     VkDevice dev = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
