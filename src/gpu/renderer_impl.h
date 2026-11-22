@@ -556,7 +556,8 @@ struct Renderer::Impl {
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipe = VK_NULL_HANDLE;
         bool failed = false, logged = false;
-        std::atomic<u32> done_frame{~0u}, ran_frame{~0u};
+        std::atomic<u32> done_frame{~0u}, ran_frame{~0u}, count{0};
+        u64 gap_sum = 0;
     } taa;
     void RunTaa();
     void TaaJitter(float& x, float& y) const;

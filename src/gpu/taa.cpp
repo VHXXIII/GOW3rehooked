@@ -47,8 +47,8 @@ void Renderer::Impl::TaaJitter(float& x, float& y) const {
         for (; i; i /= b) f /= float(b), r += f * float(i % b);
         return r;
     };
-    if (u32 ran = taa.ran_frame.load(); ran == ~0u || frame - ran > 1) return;  // no resolve ran: a jitter nothing averages away
-    const u32 i = frame % 8 + 1;
+    if (u32 ran = taa.ran_frame.load(); ran == ~0u || frame - ran > 8) return;  // no resolve ran: a jitter nothing averages away
+    const u32 i = taa.count.load() % 8 + 1;  // one offset per game frame (it spans several submits), not per submit
     x += halton(i, 2) - 0.5f, y += halton(i, 3) - 0.5f;
 }
 
@@ -105,7 +105,7 @@ void Renderer::Impl::RunTaa() {
         taa.w = t->w, taa.h = t->h, fresh_history = true;
     }
     const u32 ran = taa.ran_frame.load();
-    if (ran == ~0u || frame - ran > 1) fresh_history = true;
+    if (ran == ~0u || frame - ran > 8) fresh_history = true;
 
     EndRendering(false);
     Add(hz.r, t->t.img);
@@ -134,7 +134,10 @@ void Renderer::Impl::RunTaa() {
                  VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
                  VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
     Add(hz.w, t->t.img);
+    if (ran != ~0u) taa.gap_sum += frame - ran;
     taa.ran_frame.store(frame);
+    const u32 n = taa.count.fetch_add(1) + 1;
+    if (n % 600 == 0) Gow3::Log(std::format("TAA: {} resolves, {:.2f} submits per resolve", n, double(taa.gap_sum) / n));
     if (!taa.logged) taa.logged = true, Gow3::Log(std::format("TAA: first resolve {}x{} at {:x}", t->w, t->h, t->base));
 }
 } // namespace Gpu
