@@ -313,7 +313,7 @@ void Render(Gpu::Renderer& r, const std::vector<std::pair<const u32*, u32>>& buf
         temp_render_ms[0] += rec.ms[0], temp_render_ms[1] += rec.ms[1];
     }
     auto& stats = r.GetStats();
-    GOW3_DIAG FrameDump::Begin(stats);
+    FrameDump::Begin(stats);  // F9 also in a normal run: the next 3 frames are traced into the session archive (gow3-*.zip)
     r.SetQueries(mem.rays, mem.rays ? mem.rays + 0x2000 : 0);
     r.SetMotionBlurFrameTime(mem.motion_blur_dt);
     // Once Submit has staged the deferred arenas, the game may reset them (AwaitCopies).
@@ -327,8 +327,8 @@ void Render(Gpu::Renderer& r, const std::vector<std::pair<const u32*, u32>>& buf
 #endif
              });
     RenderProbe::End();
+    FrameDump::End(r, stats);  // returns at once unless F9 was pressed
     GOW3_DIAG {
-        FrameDump::End(r, stats);
         for (const auto& notes = stats.notes; notes_logged < notes.size(); ++notes_logged) Log("Renderer: " + notes[notes_logged]);
         for (const auto& line : stats.report) Log("Renderer: " + line);  // TEMP diagnostics
         stats.report.clear();
