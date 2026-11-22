@@ -12,10 +12,16 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(binding = 0, FMT) uniform readonly image2D cur;
 layout(binding = 1, FMT) uniform readonly image2D hist;
 layout(binding = 2, FMT) uniform writeonly image2D outi;
-layout(push_constant) uniform P { ivec2 size; uint first; float alpha; } p;
+layout(push_constant) uniform P { ivec2 size; uint first; float alpha; vec2 jit; } p;
 vec3 Tm(vec3 c) { return c / (1.0 + max(max(c.r, c.g), c.b)); }
 vec3 Un(vec3 c) { return c / max(1.0 - max(max(c.r, c.g), c.b), 1e-3); }
-vec4 Ld(ivec2 c) { return imageLoad(cur, clamp(c, ivec2(0), p.size - 1)); }
+vec4 L0(ivec2 c) { return imageLoad(cur, clamp(c, ivec2(0), p.size - 1)); }
+// The scene was drawn shifted by the jitter: sample it back where the unshifted image would have it (bilinear).
+vec4 Ld(ivec2 c) {
+    const vec2 q = vec2(c) + p.jit, f = floor(q), w = q - f;
+    const ivec2 i = ivec2(f);
+    return mix(mix(L0(i), L0(i + ivec2(1, 0)), w.x), mix(L0(i + ivec2(0, 1)), L0(i + ivec2(1, 1)), w.x), w.y);
+}
 void main() {
     const ivec2 c = ivec2(gl_GlobalInvocationID.xy);
     if (c.x >= p.size.x || c.y >= p.size.y) return;
@@ -36,6 +42,7 @@ void main() {
         const vec3 hc = clamp(h, min(bl, bh), max(bl, bh));
         res = mix(hc, cur_t, p.alpha);
     }
+    res = max(res + 0.3 * (res - sum4 * 0.25), vec3(0.0));
     imageStore(outi, c, vec4(Un(min(res, vec3(0.999))), s.a));
 }
 )";
@@ -76,7 +83,7 @@ void Renderer::Impl::RunTaa() {
                                                {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT}};
         const VkDescriptorSetLayoutCreateInfo lci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr,
                                                   VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR, 3, b};
-        const VkPushConstantRange pc{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+        const VkPushConstantRange pc{VK_SHADER_STAGE_COMPUTE_BIT, 0, 24};
         const VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0, 1, &taa.set, 1, &pc};
         std::string err;
         const auto spirv = compiler.Spirv(kTaaSource, shaderc_compute_shader, err, {{"FMT", t->fmt == VK_FORMAT_R8G8B8A8_UNORM ? "rgba8" : "rgba16f"}});
@@ -123,7 +130,9 @@ void Renderer::Impl::RunTaa() {
                                    {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, VK_NULL_HANDLE, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &in[1]},
                                    {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, VK_NULL_HANDLE, 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &in[2]}};
     PushDescriptors(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, taa.layout, 0, 3, w);
-    const struct { int w, h; u32 first; float alpha; } pc{int(t->w), int(t->h), fresh_history ? 1u : 0u, 0.12f};
+    float jx = 0, jy = 0;
+    if (!fresh_history) TaaJitter(jx, jy);  // what this frame's scene was drawn with (the offset has not advanced yet)
+    const struct { int w, h; u32 first; float alpha; float jx, jy; } pc{int(t->w), int(t->h), fresh_history ? 1u : 0u, 0.12f, jx, jy};
     vkCmdPushConstants(cmd, taa.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc), dyn.pushed = false;
     vkCmdDispatch(cmd, (t->w + 7) / 8, (t->h + 7) / 8, 1);
     StageBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
