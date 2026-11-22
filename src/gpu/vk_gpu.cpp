@@ -788,7 +788,9 @@ void Renderer::Impl::Draw(u32 op, const u32* b, const CpuRead& cpu) {
     }
     if (dyn.neg_one != gl_clip || first) RenderProbe::Cmd(RenderProbe::Clip), dyn.neg_one = gl_clip, SetNegativeOneToOne(cmd, gl_clip);
     VkViewport vp_set = vp;
-    if (taa_enabled && ((color[0] && color[0]->base == kTaaScene) || (depth && depth->base == kTaaDepth))) TaaJitter(vp_set.x, vp_set.y);
+    // The scene, and what is drawn onto its resolve before the TAA pass (36 geometry draws: particles and the like): all shifted alike.
+    if (taa_enabled && ((color[0] && color[0]->base == kTaaScene) || (depth && depth->base == kTaaDepth) || (color[0] && color[0]->base == kTaaResolved && op != 0x2D)))
+        TaaJitter(vp_set.x, vp_set.y);
     if (changed(dyn.vp, vp_set) || first) RenderProbe::Cmd(RenderProbe::Viewport), vkCmdSetViewportWithCount(cmd, 1, &vp_set);
 
     // Raster, depth/stencil, blend: all dynamic.
