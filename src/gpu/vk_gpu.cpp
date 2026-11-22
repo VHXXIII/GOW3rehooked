@@ -360,6 +360,7 @@ void Renderer::SetAnisotropy(unsigned level) {
     d->anisotropy = std::min(float(level), properties.limits.maxSamplerAnisotropy);
 }
 void Renderer::SetMotionBlurEnabled(bool enabled) { d->motion_blur_enabled = enabled; }
+void Renderer::SetTaaEnabled(bool enabled) { d->taa_enabled = enabled; }
 void Renderer::SetMotionBlurFrameTime(float seconds) {
     if (!d->motion_blur_enabled) { d->motion_blur_rate = 0.f; return; }
     d->motion_blur_rate = seconds >= 0.00001f && std::isfinite(seconds) ? std::max(1.f, 1.f / (59.94f * seconds)) : 1.f;
@@ -711,6 +712,7 @@ void Renderer::Impl::Draw(u32 op, const u32* b, const CpuRead& cpu) {
         for (u32 k = 0; k < 4; ++k) clear_color.float32[k] = F(ps_table[swz.Map(k)]);
         color_clear_pending = true;
     }
+    if (taa_enabled && color[0] && color[0]->base == kTaaBloom && taa.done_frame.exchange(frame) != frame) RunTaa();
     begin();
     if (native_clear) {
         if (color_clear_pending) {
@@ -785,7 +787,9 @@ void Renderer::Impl::Draw(u32 op, const u32* b, const CpuRead& cpu) {
         if (lo < hi) RenderProbe::Cmd(RenderProbe::Shaders), BindShaders(cmd, hi - lo, stages + lo, bound + lo), std::copy(bound + lo, bound + hi, dyn.shaders + lo);
     }
     if (dyn.neg_one != gl_clip || first) RenderProbe::Cmd(RenderProbe::Clip), dyn.neg_one = gl_clip, SetNegativeOneToOne(cmd, gl_clip);
-    if (changed(dyn.vp, vp) || first) RenderProbe::Cmd(RenderProbe::Viewport), vkCmdSetViewportWithCount(cmd, 1, &vp);
+    VkViewport vp_set = vp;
+    if (taa_enabled && ((color[0] && color[0]->base == kTaaScene) || (depth && depth->base == kTaaDepth))) TaaJitter(vp_set.x, vp_set.y);
+    if (changed(dyn.vp, vp_set) || first) RenderProbe::Cmd(RenderProbe::Viewport), vkCmdSetViewportWithCount(cmd, 1, &vp_set);
 
     // Raster, depth/stencil, blend: all dynamic.
     const u32 su = ctx[0x205];

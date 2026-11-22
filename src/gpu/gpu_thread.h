@@ -14,7 +14,7 @@ struct Surface;
 // follow the GPU's work. GOW3_NULL_GPU=1 skips the drawing.
 namespace Gow3::GpuThread {
 // ---- Lifecycle and submission ----
-void Configure(unsigned anisotropy, bool motion_blur);
+void Configure(unsigned anisotropy, bool motion_blur, bool taa = false);
 void Start();
 // Command buffers as (address, dword count); processed asynchronously in submission order.
 void Submit(std::span<const u32* const> buffers, std::span<const u32> dwords);

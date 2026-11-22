@@ -123,7 +123,7 @@ constexpr Help help[]{
     {"Display", "NVIDIA Reflex", "Lowers input lag when the GPU is the limit, at a small cost in FPS and frame pacing. Requires a compatible NVIDIA GPU and driver."},
     {"Graphics", "MSAA", "Smooths jagged edges. 2x is the original. 4x is smoother and needs more GPU power and video memory."},
     {"Graphics", "Texture Filtering", "Trilinear is the original. 4x to 16x anisotropic keeps textures sharp at steep angles, at a small GPU cost."},
-    {"Graphics", "Post Effects", "CMAA2 smooths jagged edges after the image is drawn, at a small GPU cost."},
+    {"Graphics", "Post Effects", "CMAA2 smooths jagged edges after the image is drawn, at a small GPU cost. TAA (experimental) averages the scene over several frames."},
     {"Graphics", "Scaler", "How the image is resized to your display. Bilinear is the fastest. FSR 1 (enlarging) and Lanczos 2 (shrinking) keep more detail."},
     {"Graphics", "Motion Blur", "The game's motion blur: streaks along fast movement. Off keeps the image sharp while the camera or objects move."},
     {"Other", "Skip Opening Logos", "Starts the game at the title menu."},
