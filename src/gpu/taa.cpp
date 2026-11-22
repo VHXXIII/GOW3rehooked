@@ -9,9 +9,9 @@ namespace Gpu {
 namespace {
 constexpr const char* kTaaSource = R"(#version 450
 layout(local_size_x = 8, local_size_y = 8) in;
-layout(binding = 0, rgba16f) uniform readonly image2D cur;
-layout(binding = 1, rgba16f) uniform readonly image2D hist;
-layout(binding = 2, rgba16f) uniform writeonly image2D outi;
+layout(binding = 0, FMT) uniform readonly image2D cur;
+layout(binding = 1, FMT) uniform readonly image2D hist;
+layout(binding = 2, FMT) uniform writeonly image2D outi;
 layout(push_constant) uniform P { ivec2 size; uint first; float alpha; } p;
 vec3 Tm(vec3 c) { return c / (1.0 + max(max(c.r, c.g), c.b)); }
 vec3 Un(vec3 c) { return c / max(1.0 - max(max(c.r, c.g), c.b), 1e-3); }
@@ -67,7 +67,9 @@ void Renderer::Impl::RunTaa() {
         taa.failed = true;
         Gow3::Log("TAA: disabled: " + why);
     };
-    if (t->fmt != VK_FORMAT_R16G16B16A16_SFLOAT) return fail(std::format("resolved scene format {} is not RGBA16F", (int)t->fmt));
+    if (t->fmt != VK_FORMAT_R16G16B16A16_SFLOAT && t->fmt != VK_FORMAT_R8G8B8A8_UNORM)
+        return fail(std::format("resolved scene format {} is not RGBA8 or RGBA16F", (int)t->fmt));
+    if (taa.fmt != VK_FORMAT_UNDEFINED && taa.fmt != t->fmt) return fail("resolved scene format changed");
     if (!taa.pipe) {
         const VkDescriptorSetLayoutBinding b[]{{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT},
                                                {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT},
@@ -77,7 +79,7 @@ void Renderer::Impl::RunTaa() {
         const VkPushConstantRange pc{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
         const VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0, 1, &taa.set, 1, &pc};
         std::string err;
-        const auto spirv = compiler.Spirv(kTaaSource, shaderc_compute_shader, err);
+        const auto spirv = compiler.Spirv(kTaaSource, shaderc_compute_shader, err, {{"FMT", t->fmt == VK_FORMAT_R8G8B8A8_UNORM ? "rgba8" : "rgba16f"}});
         if (spirv.empty()) return fail("shader: " + err.substr(0, 300));
         if (vkCreateDescriptorSetLayout(dev, &lci, nullptr, &taa.set) != VK_SUCCESS) return fail("descriptor layout");
         if (vkCreatePipelineLayout(dev, &pli, nullptr, &taa.layout) != VK_SUCCESS) return fail("pipeline layout");
@@ -90,6 +92,7 @@ void Renderer::Impl::RunTaa() {
         const VkResult r = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &pci, nullptr, &taa.pipe);
         vkDestroyShaderModule(dev, mod, nullptr);
         if (r != VK_SUCCESS) return fail("pipeline");
+        taa.fmt = t->fmt;
     }
     bool fresh_history = false;
     if (taa.w != t->w || taa.h != t->h || !taa.cur.img) {  // (old images, if any, stay: a size change is rare)
