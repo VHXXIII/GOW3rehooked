@@ -557,6 +557,8 @@ struct Renderer::Impl {
         VkPipeline pipe = VK_NULL_HANDLE;
         bool failed = false, logged = false;
         std::atomic<u32> done_frame{~0u}, ran_frame{~0u}, count{0};
+        std::atomic<bool> advance{false};
+        u32 resolves = 0;
         u64 gap_sum = 0;
     } taa;
     void RunTaa();

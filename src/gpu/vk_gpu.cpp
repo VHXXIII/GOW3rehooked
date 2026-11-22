@@ -1215,6 +1215,7 @@ void Renderer::Submit(std::span<const Segment> chain, const CpuRead& cpu, std::s
     r.cmd = r.primary, r.tables_used = 0, r.draw_seq = 0, r.dyn = {}, Impl::hz.Reset(), Impl::pass_w.clear();
     for (auto& w : r.recorders) vkResetCommandPool(r.dev, w.pool[r.slot], 0), w.used[r.slot] = 0;
     ++r.frame;
+    if (r.taa.advance.exchange(false)) r.taa.count.fetch_add(1);  // TAA: the jitter moves on between submits, never under recording threads
     GOW3_DIAG Impl::temp_bars[0] = Impl::temp_bars[1] = 0;
     GOW3_DIAG temp_bind_frame.store(r.frame, std::memory_order_relaxed);
     GOW3_DIAG {  // fault diagnostics: the tool layers' own large buffers, as they come and go

@@ -145,7 +145,8 @@ void Renderer::Impl::RunTaa() {
     Add(hz.w, t->t.img);
     if (ran != ~0u) taa.gap_sum += frame - ran;
     taa.ran_frame.store(frame);
-    const u32 n = taa.count.fetch_add(1) + 1;
+    taa.advance.store(true);
+    const u32 n = ++taa.resolves;
     if (n % 600 == 0) Gow3::Log(std::format("TAA: {} resolves, {:.2f} submits per resolve", n, double(taa.gap_sum) / n));
     if (!taa.logged) taa.logged = true, Gow3::Log(std::format("TAA: first resolve {}x{} at {:x}", t->w, t->h, t->base));
 }
