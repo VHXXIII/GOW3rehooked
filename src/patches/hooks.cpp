@@ -844,7 +844,7 @@ struct Setting {
 };
 constexpr std::string_view resolutions[]{"480p", "720p", "1080p", "1440p", "1800p", "4K"}, frame_rates[]{"30 FPS", "40 FPS", "60 FPS", "120 FPS", "240 FPS", "480 FPS"},
     display_modes[]{"Windowed", "Borderless", "Exclusive"}, vsync_modes[]{"FIFO", "Mailbox", "Off"}, on_off[]{"Off", "On"},
-    msaa[]{"Off", "2x", "4x"}, filtering[]{"Trilinear", "4x", "8x", "16x"}, anti_aliasing[]{"Off", "CMAA2"},
+    msaa[]{"Off", "2x", "4x"}, filtering[]{"Trilinear", "4x", "8x", "16x"}, anti_aliasing[]{"Off", "CMAA2", "FXAA"},
     scalers[]{"Bilinear / Bilinear", "FSR 1 / Lanczos 2"}, speaker_modes[]{"Auto", "Stereo", "5.1", "7.1"},
     compilation[]{"Sync", "Async"}, mechanisms[]{"JIT", "AOT"};
 Setting settings[OptionCount]{
@@ -880,7 +880,7 @@ float ValueWidth(std::string_view value) {
         {"30 FPS", 120}, {"40 FPS", 121}, {"60 FPS", 120}, {"120 FPS", 133}, {"240 FPS", 141}, {"480 FPS", 142},  // digits + an estimated 77 for " FPS"
         {"Windowed", 196}, {"Borderless", 209}, {"Exclusive", 180}, {"FIFO", 84}, {"Mailbox", 153},
         {"Off", 67}, {"On", 57}, {"2x", 42}, {"4x", 43}, {"8x", 43}, {"16x", 57},
-        {"Trilinear", 178}, {"CMAA2", 129}, {"Bilinear / Bilinear", 344}, {"FSR 1 / Lanczos 2", 305},
+        {"Trilinear", 178}, {"CMAA2", 129}, {"FXAA", 100}, {"Bilinear / Bilinear", 344}, {"FSR 1 / Lanczos 2", 305},
         {"Sync", 92}, {"Async", 114}, {"JIT", 50}, {"AOT", 77},
         {"Auto", 88}, {"Stereo", 125}, {"5.1", 62}, {"7.1", 62},  // estimated, like " FPS"
     };

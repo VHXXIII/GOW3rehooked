@@ -153,6 +153,11 @@ foreach(pass cmaa2_0 cmaa2_1 cmaa2_2 cmaa2_3)
         DEPENDS ${SRC}/present/cmaa2/${pass}.comp VERBATIM)
     target_sources(gow3 PRIVATE ${cmaa_spv})
 endforeach()
+set(fxaa_spv ${CMAKE_CURRENT_BINARY_DIR}/fxaa_spv.inc)
+add_custom_command(OUTPUT ${fxaa_spv}
+    COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O -mfmt=num ${SRC}/present/fxaa/fxaa.comp -o ${fxaa_spv}
+    DEPENDS ${SRC}/present/fxaa/fxaa.comp VERBATIM)
+target_sources(gow3 PRIVATE ${fxaa_spv})
 target_include_directories(gow3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 if(WIN32)
     target_include_directories(gow3 PRIVATE ${SRC}) # every project include is a path from src/

@@ -80,6 +80,10 @@ VkQueryPool probe_queries;
 VkDescriptorSetLayout easu_set;
 VkPipelineLayout easu_layout;
 VkPipeline easu_pipeline;
+VkDescriptorSetLayout fxaa_set;
+VkPipelineLayout fxaa_layout;
+VkPipeline fxaa_pipeline;
+VkSampler fxaa_sampler;
 VkDescriptorSetLayout cmaa_set;
 VkPipelineLayout cmaa_layout;
 std::array<VkPipeline, 4> cmaa_pipelines;
@@ -88,6 +92,9 @@ AntiAliasing anti_aliasing;
 PFN_vkCmdPushDescriptorSetKHR push_descriptor;
 constexpr u32 easu_spv[]{
 #include "easu_spv.inc"
+};
+constexpr u32 fxaa_spv[]{
+#include "fxaa_spv.inc"
 };
 constexpr u32 cmaa0_spv[]{
 #include "cmaa2_0_spv.inc"
@@ -233,6 +240,31 @@ VkImageView ApplyCmaa(Frame& frame, VkExtent2D size) {
     dispatch(2, 0, 0);
     dispatch(1, 1, 2, args);
     dispatch(3, 0, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+    return c.output.view;
+}
+
+// FXAA: one pass from the display buffer's sRGB view into the same RGBA8 output image CMAA2 uses.
+VkImageView ApplyFxaa(Frame& frame, VkExtent2D size) {
+    auto& c = frame.cmaa;
+    ResizeScaled(c.output, size);
+    if (!c.output.in_general) {
+        c.output.in_general = true;
+        const VkImageMemoryBarrier2 transition{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .image = c.output.image, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+        const VkDependencyInfo before{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &transition};
+        vkCmdPipelineBarrier2(frame.cmd, &before);
+    }
+    const VkDescriptorImageInfo desc[2]{{fxaa_sampler, frame.linear, VK_IMAGE_LAYOUT_GENERAL}, {VK_NULL_HANDLE, c.output.view, VK_IMAGE_LAYOUT_GENERAL}};
+    const VkWriteDescriptorSet writes[2]{
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &desc[0]},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = 1, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = &desc[1]}};
+    push_descriptor(frame.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, fxaa_layout, 0, 2, writes);
+    const struct { float ix, iy; int w, h; } constants{1.f / float(size.width), 1.f / float(size.height), int(size.width), int(size.height)};
+    vkCmdPushConstants(frame.cmd, fxaa_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+    vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, fxaa_pipeline);
+    vkCmdDispatch(frame.cmd, (size.width + 7) / 8, (size.height + 7) / 8, 1);
+    ComputeBarrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
     return c.output.view;
 }
 
@@ -399,7 +431,7 @@ bool Show(Frame& frame, VkRect2D& area, VkExtent2D& input, u64 address, bool bgr
         // Sampled only: the target can be a storage image, which an sRGB format cannot be. No sibling (not 8-bit): no CMAA2.
         const VkImageViewUsageCreateInfo sampled{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO, .usage = VK_IMAGE_USAGE_SAMPLED_BIT};
         view.pNext = &sampled, view.format = Sibling(view_format, true);
-        if (anti_aliasing == AntiAliasing::Cmaa2 && view.format)
+        if ((anti_aliasing == AntiAliasing::Cmaa2 || anti_aliasing == AntiAliasing::Fxaa) && view.format)
             Check(vkCreateImageView(device, &view, nullptr, &frame.linear), "Create display buffer sRGB view");
         frame.game_image = game.image;
         frame.game_format = view_format;
@@ -473,7 +505,7 @@ void Draw(s64 latch, u64 address, bool bgra, u64 guest_frame) {
                                   .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &target};
     vkCmdPipelineBarrier2(frame.cmd, &before);
     VkImageView source = frame.game;
-    if (shown && frame.linear) source = ApplyCmaa(frame, input);
+    if (shown && frame.linear) source = anti_aliasing == AntiAliasing::Fxaa ? ApplyFxaa(frame, input) : ApplyCmaa(frame, input);
     if (shown && scaling == ScalingFilter::Fsr1 && area.extent.width >= input.width && area.extent.height >= input.height &&
         (area.extent.width > input.width || area.extent.height > input.height)) {
         source = Upscale(frame, source, input, area.extent);
@@ -625,6 +657,22 @@ void main() { color = vec4(filtered(uv).rgb, 1.0); }
             .setLayoutCount = 1, .pSetLayouts = &easu_set, .pushConstantRangeCount = 1, .pPushConstantRanges = &constants};
         Check(vkCreatePipelineLayout(device, &layout, nullptr, &easu_layout), "Create FSR pipeline layout");
         easu_pipeline = CreateCompute(easu_spv, easu_layout);
+    }
+    if (config.anti_aliasing == AntiAliasing::Fxaa) {
+        const VkDescriptorSetLayoutBinding bindings[]{{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+                                                      {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT}};
+        const VkDescriptorSetLayoutCreateInfo set{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR, .bindingCount = 2, .pBindings = bindings};
+        Check(vkCreateDescriptorSetLayout(device, &set, nullptr, &fxaa_set), "Create FXAA descriptor layout");
+        const VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+        const VkPipelineLayoutCreateInfo layout{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &fxaa_set,
+                                                .pushConstantRangeCount = 1, .pPushConstantRanges = &range};
+        Check(vkCreatePipelineLayout(device, &layout, nullptr, &fxaa_layout), "Create FXAA pipeline layout");
+        const VkSamplerCreateInfo linear{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR, .minFilter = VK_FILTER_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        Check(vkCreateSampler(device, &linear, nullptr, &fxaa_sampler), "Create FXAA sampler");
+        fxaa_pipeline = CreateCompute(fxaa_spv, fxaa_layout);
     }
     if (config.anti_aliasing == AntiAliasing::Cmaa2) {
         std::array<VkDescriptorSetLayoutBinding, 9> bindings{};
