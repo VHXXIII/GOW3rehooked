@@ -547,7 +547,7 @@ struct Renderer::Impl {
     // Temporal anti-aliasing (opt-in): the scene's sub-pixel jitter and a resolve of the game's resolved scene colour before the bloom.
     bool taa_enabled = false;
     // GOW3's fixed targets (1080p trace): the MSAA scene colour and depth, the resolved scene colour, the first bloom downsample.
-    static constexpr u64 kTaaScene = 0x2819f0000, kTaaDepth = 0x2839d0000, kTaaResolved = 0x2809f8000, kTaaBloom = 0x28c3b0000;
+    static constexpr u64 kTaaScene = 0x2819f0000, kTaaDepth = 0x2839d0000, kTaaResolved = 0x2809f8000, kTaaResolved2 = 0x27fa08000, kTaaBloom = 0x28c3b0000;
     struct TaaState {
         Tex cur, hist, out;
         u32 w = 0, h = 0;

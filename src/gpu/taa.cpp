@@ -64,10 +64,11 @@ void Renderer::Impl::RunTaa() {
     Target* t = nullptr;
     {
         std::scoped_lock lock(targets_lock);
-        TargetsAt(kTaaResolved, [&](Target& c) {
-            if (c.depth || c.samples != 1 || std::atomic_ref(c.rendered).load(std::memory_order_relaxed) != frame) return;
-            if (!t || c.w * c.h > t->w * t->h) t = &c;
-        });
+        for (const u64 base : {kTaaResolved, kTaaResolved2})  // the game alternates between two resolved buffers
+            TargetsAt(base, [&](Target& c) {
+                if (c.depth || c.samples != 1 || std::atomic_ref(c.rendered).load(std::memory_order_relaxed) != frame) return;
+                if (!t || c.w * c.h > t->w * t->h) t = &c;
+            });
     }
     if (!t) return;  // a scene without it (menu, video): the jitter stops by itself
     auto fail = [&](const std::string& why) {
