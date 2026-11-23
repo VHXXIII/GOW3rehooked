@@ -835,7 +835,7 @@ u32 main_labels_at{}, main_clips_at{}, main_initial_target{};
 bool continue_available{};
 
 enum Option : u32 { Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Msaa, Filtering, PostEffects, Scaler, MotionBlurOption,
-                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, SpeakersOption, OptionCount, Empty = OptionCount };
+                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, SpeakersOption, TaaBlendOption, TaaSharpOption, TaaClampOption, OptionCount, Empty = OptionCount };
 struct Setting {
     std::string_view label;
     std::span<const std::string_view> values;
@@ -846,6 +846,7 @@ constexpr std::string_view resolutions[]{"480p", "720p", "1080p", "1440p", "1800
     display_modes[]{"Windowed", "Borderless", "Exclusive"}, vsync_modes[]{"FIFO", "Mailbox", "Off"}, on_off[]{"Off", "On"},
     msaa[]{"Off", "2x", "4x"}, filtering[]{"Trilinear", "4x", "8x", "16x"}, anti_aliasing[]{"Off", "CMAA2", "TAA"},
     scalers[]{"Bilinear / Bilinear", "FSR 1 / Lanczos 2"}, speaker_modes[]{"Auto", "Stereo", "5.1", "7.1"},
+    taa_blend[]{"0.05", "0.08", "0.12", "0.18", "0.25", "0.35"}, taa_sharp[]{"0", "0.15", "0.3", "0.45", "0.6", "0.8"}, taa_clamp[]{"0.75", "1", "1.25", "1.6", "2", "3"},
     compilation[]{"Sync", "Async"}, mechanisms[]{"JIT", "AOT"};
 Setting settings[OptionCount]{
     {"Resolution", resolutions, 2, 201}, {"Frame Rate", frame_rates, 2, 206}, {"Display Mode", display_modes, 1, 237},
@@ -853,11 +854,12 @@ Setting settings[OptionCount]{
     {"MSAA", msaa, 1, 106}, {"Texture Filtering", filtering, 0, 319}, {"Post Effects", anti_aliasing, 0, 235},
     {"Scaler", scalers, 0, 116}, {"Motion Blur", on_off, 1, 215},
     {"Skip Opening Logos", on_off, 0, 350}, {"Skip Videos with X", on_off, 0, 330}, {"4K Cinematics", on_off, 0, 260},
-    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}, {"Speakers", speaker_modes, 0, 165}
+    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}, {"Speakers", speaker_modes, 0, 165},
+    {"TAA Blend", taa_blend, 2, 180}, {"TAA Sharpness", taa_sharp, 2, 255}, {"TAA Clamp", taa_clamp, 2, 185}
 };
 constexpr Option pages[][kRows - 1]{
     {Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Empty, Empty, Empty},
-    {Msaa, Filtering, PostEffects, Scaler, MotionBlurOption, Empty, Empty, Empty, Empty},
+    {Msaa, Filtering, PostEffects, Scaler, MotionBlurOption, TaaBlendOption, TaaSharpOption, TaaClampOption, Empty},
     {SkipIntro, SkipVideos, Mechanism, Recompilation, LazyAot, SpeakersOption, Empty, Empty, Empty}
 };
 constexpr std::string_view page_names[]{"Display", "Graphics", "Other"};
@@ -882,7 +884,9 @@ float ValueWidth(std::string_view value) {
         {"Off", 67}, {"On", 57}, {"2x", 42}, {"4x", 43}, {"8x", 43}, {"16x", 57},
         {"Trilinear", 178}, {"CMAA2", 129}, {"TAA", 80}, {"Bilinear / Bilinear", 344}, {"FSR 1 / Lanczos 2", 305},
         {"Sync", 92}, {"Async", 114}, {"JIT", 50}, {"AOT", 77},
-        {"Auto", 88}, {"Stereo", 125}, {"5.1", 62}, {"7.1", 62},  // estimated, like " FPS"
+        {"Auto", 88}, {"Stereo", 125}, {"5.1", 62}, {"7.1", 62},
+        {"0.05", 120}, {"0.08", 120}, {"0.12", 120}, {"0.18", 120}, {"0.25", 120}, {"0.35", 120}, {"0.15", 120}, {"0.3", 90}, {"0.45", 120}, {"0.6", 90}, {"0.8", 90},
+        {"0.75", 120}, {"1", 40}, {"1.25", 120}, {"1.6", 100}, {"2", 50}, {"3", 50}, {"0", 50},  // estimated, like " FPS"
     };
     const auto it = std::ranges::find(widths, value, &std::pair<std::string_view, float>::first);
     return it != std::end(widths) ? it->second : kMaxValueWidth;
@@ -924,6 +928,7 @@ Config SelectedConfig() {
     config.scaling_filter = ScalingFilter(settings[Scaler].index);
     config.motion_blur = settings[MotionBlurOption].index;
     config.speakers = Speakers(settings[SpeakersOption].index);
+    config.taa_blend = settings[TaaBlendOption].index, config.taa_sharpness = settings[TaaSharpOption].index, config.taa_clamp = settings[TaaClampOption].index;
     config.skip_intro = settings[SkipIntro].index;
     config.skip_videos = settings[SkipVideos].index;
     config.cinematics_4k = settings[Cinematics4K].index;
@@ -946,6 +951,7 @@ void Configure(const Config& config) {
     settings[Scaler].index = u32(config.scaling_filter);
     settings[MotionBlurOption].index = config.motion_blur;
     settings[SpeakersOption].index = u32(config.speakers);
+    settings[TaaBlendOption].index = config.taa_blend, settings[TaaSharpOption].index = config.taa_sharpness, settings[TaaClampOption].index = config.taa_clamp;
     settings[SkipIntro].index = config.skip_intro;
     settings[SkipVideos].index = config.skip_videos;
     settings[Cinematics4K].index = config.cinematics_4k;

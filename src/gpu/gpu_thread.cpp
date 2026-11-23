@@ -62,6 +62,7 @@ std::atomic<bool> cinematic_active{false};
 std::atomic<Gpu::Renderer*> live{nullptr};
 unsigned configured_anisotropy{};
 bool configured_motion_blur = true, configured_taa = false;
+float configured_taa_params[3]{0.12f, 0.3f, 1.25f};
 bool render_off = std::getenv("GOW3_NULL_GPU") != nullptr;
 size_t notes_logged = 0;
 
@@ -227,7 +228,7 @@ Gpu::Renderer* Renderer() {
     if (DebugEnabled()) Log(Gpu::PieceHash::UsesAes() ? "Renderer piece hash: AES-NI" : "Renderer piece hash: XXH3");
     r->SetAnisotropy(configured_anisotropy);
     r->SetMotionBlurEnabled(configured_motion_blur);
-    r->SetTaaEnabled(configured_taa);
+    r->SetTaaEnabled(configured_taa, configured_taa_params[0], configured_taa_params[1], configured_taa_params[2]);
 #ifdef _WIN32
     GuestMemory::Install();
 #endif
@@ -398,7 +399,10 @@ void Run(const std::stop_token& token) {
 } // namespace
 
 // ---- Lifecycle and submission ----
-void Configure(unsigned anisotropy, bool motion_blur, bool taa) { configured_anisotropy = anisotropy, configured_motion_blur = motion_blur, configured_taa = taa; }
+void Configure(unsigned anisotropy, bool motion_blur, bool taa, float blend, float sharpness, float clamp) {
+    configured_anisotropy = anisotropy, configured_motion_blur = motion_blur, configured_taa = taa;
+    configured_taa_params[0] = blend, configured_taa_params[1] = sharpness, configured_taa_params[2] = clamp;
+}
 
 void Start() {
     CpuProbe::Start();

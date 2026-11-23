@@ -360,7 +360,9 @@ void Renderer::SetAnisotropy(unsigned level) {
     d->anisotropy = std::min(float(level), properties.limits.maxSamplerAnisotropy);
 }
 void Renderer::SetMotionBlurEnabled(bool enabled) { d->motion_blur_enabled = enabled; }
-void Renderer::SetTaaEnabled(bool enabled) { d->taa_enabled = enabled; }
+void Renderer::SetTaaEnabled(bool enabled, float blend, float sharpness, float clamp) {
+    d->taa_enabled = enabled, d->taa_params[0] = blend, d->taa_params[1] = sharpness, d->taa_params[2] = clamp;
+}
 void Renderer::SetMotionBlurFrameTime(float seconds) {
     if (!d->motion_blur_enabled) { d->motion_blur_rate = 0.f; return; }
     d->motion_blur_rate = seconds >= 0.00001f && std::isfinite(seconds) ? std::max(1.f, 1.f / (59.94f * seconds)) : 1.f;

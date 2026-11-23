@@ -129,7 +129,9 @@ int Gow3Run(const Gow3PathChar* executable_directory, const Gow3PathChar* game_d
         SetUnhandledExceptionFilter(ReportUnhandledCrash);
 #endif
         const auto config = LoadConfig(app / PortDir::Settings / "config.cfg");
-        GpuThread::Configure(config.anisotropy, config.motion_blur, config.anti_aliasing == AntiAliasing::Taa);
+        GpuThread::Configure(config.anisotropy, config.motion_blur, config.anti_aliasing == AntiAliasing::Taa,
+                         TaaBlendValues[std::min<unsigned>(config.taa_blend, 5)], TaaSharpValues[std::min<unsigned>(config.taa_sharpness, 5)],
+                         TaaClampValues[std::min<unsigned>(config.taa_clamp, 5)]);
         Libraries::AudioOut::SetSpeakerMode(int(config.speakers));
         if (DebugEnabled()) Log(std::format("Configuration: {} at {:.2f} fps, skip intro {}, skip videos {}, mode {}",
                         Resolutions[config.resolution].name, GameFrameRate(config.fps), config.skip_intro, config.skip_videos,

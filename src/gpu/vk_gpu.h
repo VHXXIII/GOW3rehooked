@@ -140,7 +140,7 @@ public:
     bool Init(const External& device, std::string& error);
     void SetAnisotropy(unsigned level);
     void SetMotionBlurEnabled(bool enabled);
-    void SetTaaEnabled(bool enabled);
+    void SetTaaEnabled(bool enabled, float blend, float sharpness, float clamp);
     void SetMotionBlurFrameTime(float seconds);
 
     // ---- Guest memory, occlusion queries and display surfaces ----

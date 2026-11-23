@@ -100,6 +100,11 @@ Config LoadConfig(const std::filesystem::path& path) {
             else valid = Choice(value, config.scaling_filter, ScalingFilters);
         } else if (key == "sharpening" || key == "rcas_attenuation" || key == "language") {
             valid = true; // options of the removed launcher, still present in older config files
+        } else if (key == "taa_blend" || key == "taa_sharpness" || key == "taa_clamp") {
+            const auto& names = key == "taa_blend" ? TaaBlendNames : key == "taa_sharpness" ? TaaSharpNames : TaaClampNames;
+            unsigned& target = key == "taa_blend" ? config.taa_blend : key == "taa_sharpness" ? config.taa_sharpness : config.taa_clamp;
+            const auto it = std::ranges::find(names, value);
+            if ((valid = it != names.end())) target = unsigned(it - names.begin());
         } else if (key == "motion_blur") {
             valid = Boolean(value, config.motion_blur);
         } else if (key == "speakers") {
@@ -128,13 +133,14 @@ void SaveMenuConfig(const std::filesystem::path& path, const Config& config) {
         unsigned(config.shader_mechanism) >= ShaderMechanisms.size() || unsigned(config.speakers) >= SpeakerModes.size())
         throw std::runtime_error("Invalid menu configuration");
     const auto flag = [](bool value) { return value ? "true" : "false"; };
-    const std::array<std::pair<std::string_view, std::string>, 18> values{{
+    const std::array<std::pair<std::string_view, std::string>, 21> values{{
         {"resolution", std::string(Resolutions[config.resolution].name)}, {"fps", std::string(rate->name)},
         {"display_mode", std::string(DisplayModes[size_t(config.display_mode)])}, {"vrr", flag(config.vrr)},
         {"vsync", std::string(VSyncModes[size_t(config.vsync)])},
         {"nvidia_reflex", flag(config.nvidia_reflex)}, {"msaa", std::to_string(config.msaa)}, {"anisotropy", std::to_string(config.anisotropy)},
         {"anti_aliasing", std::string(AntiAliasingModes[size_t(config.anti_aliasing)])}, {"scaling_filter", std::string(ScalingFilters[size_t(config.scaling_filter)])},
-        {"motion_blur", flag(config.motion_blur)}, {"speakers", std::string(SpeakerModes[size_t(config.speakers)])},
+        {"taa_blend", std::string(TaaBlendNames[std::min<size_t>(config.taa_blend, 5)])}, {"taa_sharpness", std::string(TaaSharpNames[std::min<size_t>(config.taa_sharpness, 5)])},
+        {"taa_clamp", std::string(TaaClampNames[std::min<size_t>(config.taa_clamp, 5)])}, {"motion_blur", flag(config.motion_blur)}, {"speakers", std::string(SpeakerModes[size_t(config.speakers)])},
         {"skip_intro", flag(config.skip_intro)},
         {"skip_videos", flag(config.skip_videos)}, {"cinematics_4k", flag(config.cinematics_4k)},
         {"shader_recompilation", std::string(ShaderModes[size_t(config.shader_recompilation)])},
