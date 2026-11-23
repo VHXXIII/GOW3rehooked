@@ -144,6 +144,11 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ui_font})
 file(READ ${ui_font} ui_font_hex HEX)
 string(REGEX REPLACE "(..)" "0x\\1," ui_font_bytes "${ui_font_hex}")
 file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ui_font.inc CONTENT "@ui_font_bytes@\n" @ONLY)
+set(fxaa_spv ${CMAKE_CURRENT_BINARY_DIR}/fxaa_spv.inc)
+add_custom_command(OUTPUT ${fxaa_spv}
+    COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O -mfmt=num ${SRC}/present/fxaa/fxaa.comp -o ${fxaa_spv}
+    DEPENDS ${SRC}/present/fxaa/fxaa.comp VERBATIM)
+target_sources(gow3 PRIVATE ${fxaa_spv})
 target_include_directories(gow3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 if(WIN32)
     target_include_directories(gow3 PRIVATE ${SRC}) # every project include is a path from src/
