@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <thread>
+#include <chrono>
 #include "patches/memory_patcher.h"
 #include "main/host.h"
 #include "orbis/core/loader/elf.h"
@@ -85,6 +87,7 @@ struct CheatSite {
     u32 at;
     std::vector<u8> original, replacement;  // a replacement with the original's size goes in place, a longer one into a stub
     bool bare = false;                      // the replacement touches neither the stack nor the flags: the stub needs no wrapper
+    bool gated = false;                     // the stub starts disabled; a byte in it is set after a delay (see ApplyCheats)
 };
 struct Cheat {
     const char* name;
@@ -96,7 +99,7 @@ const std::vector<Cheat>& Cheats() {
         {"infinite health", &Config::cheat_health,
          {{"c4 c1 7a 11 85 cc 01 00 00 49 8b 45 00 4c 89 ef", 0, {0xc4, 0xc1, 0x7a, 0x11, 0x85, 0xcc, 0x01, 0, 0},
            {0x9c, 0x41, 0x80, 0xbd, 0x98, 0x02, 0, 0, 0, 0x75, 9, 0xc4, 0xc1, 0x7a, 0x10, 0x85, 0xd0, 0x01, 0, 0, 0x9d,
-            0xc4, 0xc1, 0x7a, 0x11, 0x85, 0xcc, 0x01, 0, 0}}}},
+            0xc4, 0xc1, 0x7a, 0x11, 0x85, 0xcc, 0x01, 0, 0}, false, true}}},
         {"infinite magic and item meter", &Config::cheat_magic,
          {{"c5 fa 5f c2 c5 fa 5d c1 c5 fa 11 83 d0 01 00 00", 8, {0xc5, 0xfa, 0x11, 0x83, 0xd0, 0x01, 0, 0},
            {0xc5, 0xfa, 0x10, 0x83, 0xd0, 0x01, 0, 0}},  // the store becomes a load: nothing is written, xmm0 holds the old value
@@ -151,14 +154,14 @@ u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8
             if (mem[at] != 0xcc) { ++at; continue; }
             u64 end = at;
             while (end < seg.size && mem[end] == 0xcc) ++end;
-            const u64 start = (seg.address + at + 15) & ~15ull;  // 16-byte aligned, inside the run
-            if (start + size <= seg.address + end && free(start)) return fill = 0xcc, start;
+            for (u64 start = (seg.address + at + 15) & ~15ull; start + size <= seg.address + end; start += 16)  // 16-byte aligned, inside the run
+                if (free(start)) return fill = 0xcc, start;
             at = end;
         }
         u64 tail = seg.size;  // zero fill after the last code
         while (tail && mem[tail - 1] == 0) --tail;
-        const u64 start = (seg.address + tail + 15) & ~15ull;
-        if (start + size <= seg.address + seg.size && free(start)) return fill = 0, start;
+        for (u64 start = (seg.address + tail + 15) & ~15ull; start + size <= seg.address + seg.size; start += 16)
+            if (free(start)) return fill = 0, start;
     }
     return 0;
 }
@@ -169,6 +172,7 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
     std::string report;
     const u64 base = eboot.GetBaseAddress();
     std::vector<u64> claimed;
+    u64 gate = 0;  // the gate byte of the health stub
     {
         const auto info = eboot.GetModuleInfo();
         std::string seg_report;
@@ -201,6 +205,19 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             const u64 resume = address + site.original.size();
             std::vector<u8> code;
             if (!site.bare) code = {0x48, 0x8d, 0x64, 0x24, 0x80};  // lea rsp, [rsp-0x80]
+            if (site.gated) {
+                // pushfq; cmp byte [rip+gate], 0; je <popfq>; then the replacement without its own pushfq (its popfq is the target)
+                const u32 gate_at = u32(code.size()) + 1 + 7 + 2 + (u32(site.replacement.size()) - 1) + 8 + 5;
+                const u32 cmp_end = u32(code.size()) + 1 + 7;
+                const std::int32_t gate_rel = std::int32_t(gate_at - cmp_end);
+                code.push_back(0x9c);
+                code.insert(code.end(), {0x80, 0x3d});
+                code.insert(code.end(), reinterpret_cast<const u8*>(&gate_rel), reinterpret_cast<const u8*>(&gate_rel) + 4);
+                code.push_back(0);
+                code.insert(code.end(), {0x74, u8(site.replacement.size() - 2 - site.original.size())});
+                code.insert(code.end(), site.replacement.begin() + 1, site.replacement.end());
+                gate = stub + gate_at;
+            } else
             code.insert(code.end(), site.replacement.begin(), site.replacement.end());
             if (!site.bare) code.insert(code.end(), {0x48, 0x8d, 0xa4, 0x24, 0x80, 0, 0, 0});  // lea rsp, [rsp+0x80]
             const std::int64_t back = std::int64_t(resume) - std::int64_t(stub + code.size() + 5);
@@ -209,6 +226,7 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             const std::int32_t back32 = std::int32_t(back);
             code.insert(code.end(), reinterpret_cast<const u8*>(&back32), reinterpret_cast<const u8*>(&back32) + 4);
             const std::int64_t delta = std::int64_t(stub) - std::int64_t(address + 5);
+            if (site.gated) code.push_back(0);  // the gate byte, after the jump back
             std::vector<u8> jump{0xe9};
             const std::int32_t rel = std::int32_t(delta);
             jump.insert(jump.end(), reinterpret_cast<const u8*>(&rel), reinterpret_cast<const u8*>(&rel) + 4);
@@ -225,6 +243,15 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
     }
     MemoryPatcher(eboot).Apply(patches);
     Log("Cheats: " + report);
+    if (gate) {
+        // The health stub stays off while the engine initialises; it is opened later from a thread of its own.
+        std::thread([&eboot, gate] {
+            std::this_thread::sleep_for(std::chrono::seconds(45));
+            const u8 one = 1;
+            const bool ok = eboot.memory->TryWriteBacking(reinterpret_cast<void*>(gate), &one, 1);
+            Log(ok ? "Cheats: health gate opened" : "Cheats: health gate could not be opened");
+        }).detach();
+    }
 }
 
 void ApplyGamePatches(Core::Module& eboot, const Config& config) {
