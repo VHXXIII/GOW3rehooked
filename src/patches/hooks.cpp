@@ -835,7 +835,7 @@ u32 main_labels_at{}, main_clips_at{}, main_initial_target{};
 bool continue_available{};
 
 enum Option : u32 { Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Msaa, Filtering, PostEffects, Scaler, MotionBlurOption,
-                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, SpeakersOption, OptionCount, Empty = OptionCount };
+                    SkipIntro, SkipVideos, Cinematics4K, Mechanism, Recompilation, LazyAot, SpeakersOption, CheatHealth, CheatMagic, CheatOrbs, CheatDifficulties, OptionCount, Empty = OptionCount };
 struct Setting {
     std::string_view label;
     std::span<const std::string_view> values;
@@ -853,15 +853,17 @@ Setting settings[OptionCount]{
     {"MSAA", msaa, 1, 106}, {"Texture Filtering", filtering, 0, 319}, {"Post Effects", anti_aliasing, 0, 235},
     {"Scaler", scalers, 0, 116}, {"Motion Blur", on_off, 1, 215},
     {"Skip Opening Logos", on_off, 0, 350}, {"Skip Videos with X", on_off, 0, 330}, {"4K Cinematics", on_off, 0, 260},
-    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}, {"Speakers", speaker_modes, 0, 165}
+    {"Shader Mechanism", mechanisms, 0, 338}, {"Shader Recompilation", compilation, 0, 400}, {"Lazy AOT", on_off, 0, 175}, {"Speakers", speaker_modes, 0, 165},
+    {"Infinite Health", on_off, 0, 290}, {"Infinite Magic", on_off, 0, 270}, {"Max Red Orbs", on_off, 0, 230}, {"All Difficulties", on_off, 0, 310}
 };
 constexpr Option pages[][kRows - 1]{
     {Resolution, Fps, DisplayModeOption, Vrr, Vsync, Reflex, Empty, Empty, Empty},
     {Msaa, Filtering, PostEffects, Scaler, MotionBlurOption, Empty, Empty, Empty, Empty},
-    {SkipIntro, SkipVideos, Mechanism, Recompilation, LazyAot, SpeakersOption, Empty, Empty, Empty}
+    {SkipIntro, SkipVideos, Mechanism, Recompilation, LazyAot, SpeakersOption, Empty, Empty, Empty},
+    {CheatHealth, CheatMagic, CheatOrbs, CheatDifficulties, Empty, Empty, Empty, Empty, Empty}
 };
-constexpr std::string_view page_names[]{"Display", "Graphics", "Other"};
-constexpr float page_widths[]{198.f, 234.f, 181.f};
+constexpr std::string_view page_names[]{"Display", "Graphics", "Other", "Cheats"};
+constexpr float page_widths[]{198.f, 234.f, 181.f, 190.f};
 constexpr u32 kPageCount = std::size(pages);
 u32 row_at[kRows], page{};
 std::array<u32, OptionCount> initial_indices{};
@@ -924,6 +926,8 @@ Config SelectedConfig() {
     config.scaling_filter = ScalingFilter(settings[Scaler].index);
     config.motion_blur = settings[MotionBlurOption].index;
     config.speakers = Speakers(settings[SpeakersOption].index);
+    config.cheat_health = settings[CheatHealth].index, config.cheat_magic = settings[CheatMagic].index;
+    config.cheat_orbs = settings[CheatOrbs].index, config.cheat_difficulties = settings[CheatDifficulties].index;
     config.skip_intro = settings[SkipIntro].index;
     config.skip_videos = settings[SkipVideos].index;
     config.cinematics_4k = settings[Cinematics4K].index;
@@ -946,6 +950,8 @@ void Configure(const Config& config) {
     settings[Scaler].index = u32(config.scaling_filter);
     settings[MotionBlurOption].index = config.motion_blur;
     settings[SpeakersOption].index = u32(config.speakers);
+    settings[CheatHealth].index = config.cheat_health, settings[CheatMagic].index = config.cheat_magic;
+    settings[CheatOrbs].index = config.cheat_orbs, settings[CheatDifficulties].index = config.cheat_difficulties;
     settings[SkipIntro].index = config.skip_intro;
     settings[SkipVideos].index = config.skip_videos;
     settings[Cinematics4K].index = config.cinematics_4k;

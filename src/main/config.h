@@ -74,6 +74,7 @@ struct Config {
     bool nvidia_reflex = false;
     AntiAliasing anti_aliasing = AntiAliasing::None;
     ScalingFilter scaling_filter = ScalingFilter::Bilinear;
+    bool cheat_health = false, cheat_magic = false, cheat_orbs = false, cheat_difficulties = false;
     bool motion_blur = true;                // false: the game's motion blur pass gets no velocity (gcn_spirv.cpp)
     Speakers speakers = Speakers::Auto;     // Auto follows the sound device's channel count
     ShaderRecompilation shader_recompilation = ShaderRecompilation::Async;

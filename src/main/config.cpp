@@ -100,6 +100,9 @@ Config LoadConfig(const std::filesystem::path& path) {
             else valid = Choice(value, config.scaling_filter, ScalingFilters);
         } else if (key == "sharpening" || key == "rcas_attenuation" || key == "language") {
             valid = true; // options of the removed launcher, still present in older config files
+        } else if (key == "cheat_health" || key == "cheat_magic" || key == "cheat_orbs" || key == "cheat_difficulties") {
+            valid = Boolean(value, key == "cheat_health" ? config.cheat_health : key == "cheat_magic" ? config.cheat_magic
+                                                      : key == "cheat_orbs" ? config.cheat_orbs : config.cheat_difficulties);
         } else if (key == "motion_blur") {
             valid = Boolean(value, config.motion_blur);
         } else if (key == "speakers") {
@@ -128,13 +131,14 @@ void SaveMenuConfig(const std::filesystem::path& path, const Config& config) {
         unsigned(config.shader_mechanism) >= ShaderMechanisms.size() || unsigned(config.speakers) >= SpeakerModes.size())
         throw std::runtime_error("Invalid menu configuration");
     const auto flag = [](bool value) { return value ? "true" : "false"; };
-    const std::array<std::pair<std::string_view, std::string>, 18> values{{
+    const std::array<std::pair<std::string_view, std::string>, 22> values{{
         {"resolution", std::string(Resolutions[config.resolution].name)}, {"fps", std::string(rate->name)},
         {"display_mode", std::string(DisplayModes[size_t(config.display_mode)])}, {"vrr", flag(config.vrr)},
         {"vsync", std::string(VSyncModes[size_t(config.vsync)])},
         {"nvidia_reflex", flag(config.nvidia_reflex)}, {"msaa", std::to_string(config.msaa)}, {"anisotropy", std::to_string(config.anisotropy)},
         {"anti_aliasing", std::string(AntiAliasingModes[size_t(config.anti_aliasing)])}, {"scaling_filter", std::string(ScalingFilters[size_t(config.scaling_filter)])},
-        {"motion_blur", flag(config.motion_blur)}, {"speakers", std::string(SpeakerModes[size_t(config.speakers)])},
+        {"cheat_health", flag(config.cheat_health)}, {"cheat_magic", flag(config.cheat_magic)}, {"cheat_orbs", flag(config.cheat_orbs)},
+        {"cheat_difficulties", flag(config.cheat_difficulties)}, {"motion_blur", flag(config.motion_blur)}, {"speakers", std::string(SpeakerModes[size_t(config.speakers)])},
         {"skip_intro", flag(config.skip_intro)},
         {"skip_videos", flag(config.skip_videos)}, {"cinematics_4k", flag(config.cinematics_4k)},
         {"shader_recompilation", std::string(ShaderModes[size_t(config.shader_recompilation)])},

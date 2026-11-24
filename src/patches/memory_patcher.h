@@ -19,6 +19,8 @@ private:
 };
 // Startup EBOOT patches for native save capacity and configured compatibility settings.
 void ApplyGamePatches(Core::Module& eboot, const Config& config);
+// Cheats chosen in the menu: code patches found by their bytes, so they follow the game code wherever the loader put it.
+void ApplyCheats(Core::Module& eboot, const Config& config);
 // The file holds version 1.02's code (European and American) where the patches go: checked before the window opens.
 bool IsSupportedEboot(const std::filesystem::path& path);
 }

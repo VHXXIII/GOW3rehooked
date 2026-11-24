@@ -9,7 +9,10 @@
 #include <bit>
 #include <cstring>
 #include <format>
+#include <cstdlib>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace Gow3 {
 void MemoryPatcher::Apply(std::span<const MemoryPatch> patches) {
@@ -70,6 +73,139 @@ bool IsSupportedEboot(const std::filesystem::path& path) {
         elf.LoadSegment(reinterpret_cast<u64>(got.data()), h->p_offset + (s.rva - h->p_vaddr), s.size);
         return std::memcmp(got.data(), s.bytes.data(), s.size) == 0;
     });
+}
+
+
+namespace {
+// Cheats from Celogamez's CUSA01623 v01.02 GoldHEN cheats (the same code sites SpartanPort hooks). Each site is found by its bytes
+// ("??" any), `at` being the distance from the match to the instruction the stub replaces.
+struct CheatSite {
+    const char* pattern;
+    u32 at;
+    std::vector<u8> original, replacement;  // a replacement with the original's size goes in place, a longer one into a stub
+};
+struct Cheat {
+    const char* name;
+    bool Config::* enabled;
+    std::vector<CheatSite> sites;
+};
+const std::vector<Cheat>& Cheats() {
+    static const std::vector<Cheat> cheats{
+        {"infinite health", &Config::cheat_health,
+         {{"c4 c1 7a 11 85 cc 01 00 00 49 8b 45 00 4c 89 ef", 0, {0xc4, 0xc1, 0x7a, 0x11, 0x85, 0xcc, 0x01, 0, 0},
+           {0x9c, 0x41, 0x80, 0xbd, 0x98, 0x02, 0, 0, 0, 0x75, 9, 0xc4, 0xc1, 0x7a, 0x10, 0x85, 0xd0, 0x01, 0, 0, 0x9d,
+            0xc4, 0xc1, 0x7a, 0x11, 0x85, 0xcc, 0x01, 0, 0}}}},
+        {"infinite magic and item meter", &Config::cheat_magic,
+         {{"c5 fa 5f c2 c5 fa 5d c1 c5 fa 11 83 d0 01 00 00", 8, {0xc5, 0xfa, 0x11, 0x83, 0xd0, 0x01, 0, 0},
+           {0xc5, 0xfa, 0x10, 0x83, 0xd0, 0x01, 0, 0, 0xc5, 0xfa, 0x11, 0x83, 0xd0, 0x01, 0, 0}},
+          {"c5 fa 5f c2 c5 fa 5d c1 c5 fa 11 87 d4 01 00 00 c3", 8, {0xc5, 0xfa, 0x11, 0x87, 0xd4, 0x01, 0, 0},
+           {0xc5, 0xfa, 0x10, 0x87, 0xd4, 0x01, 0, 0, 0xc5, 0xfa, 0x11, 0x87, 0xd4, 0x01, 0, 0}}}},
+        {"max red orbs", &Config::cheat_orbs,
+         {{"c5 fa 11 87 e8 01 00 00 48 8b 87 b0 01 00 00 a9 00 00 04 00", 0, {0xc5, 0xfa, 0x11, 0x87, 0xe8, 0x01, 0, 0},
+           {0xc7, 0x87, 0xe8, 0x01, 0, 0, 0xf0, 0x23, 0x74, 0x49}}}},
+        {"all difficulties", &Config::cheat_difficulties,
+         {{"48 8b 08 b8 03 00 00 00 f6 c1 08 75 1b b8 02 00 00 00", 3, {0xb8, 3, 0, 0, 0, 0xf6, 0xc1, 8},
+           {0xb8, 3, 0, 0, 0, 0x85, 0xc0, 0x90}}}},
+    };
+    return cheats;
+}
+
+// First match of a pattern in the module's executable segments, as a host address; 0 when there is none.
+u64 FindPattern(Core::Module& module, const char* pattern) {
+    std::vector<int> bytes;  // -1: any
+    for (const char* c = pattern; *c;) {
+        if (*c == ' ') { ++c; continue; }
+        if (*c == '?') { bytes.push_back(-1); c += 2; continue; }
+        bytes.push_back(int(std::strtoul(std::string(c, 2).c_str(), nullptr, 16)));
+        c += 2;
+    }
+    const auto info = module.GetModuleInfo();
+    for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
+        const auto& seg = info.segments[i];
+        if (!(seg.prot & 4) || seg.size < bytes.size()) continue;
+        const auto* mem = reinterpret_cast<const u8*>(seg.address);
+        for (u64 at = 0; at + bytes.size() <= seg.size; ++at) {
+            size_t k = 0;
+            while (k < bytes.size() && (bytes[k] < 0 || mem[at + k] == bytes[k])) ++k;
+            if (k == bytes.size()) return seg.address + at;
+        }
+    }
+    return 0;
+}
+
+#ifdef _WIN32
+// Executable memory a 32-bit jump from the module reaches.
+u8* AllocateNear(u64 base, u64 size) {
+    for (u64 distance = 0x10000; distance < 0x70000000; distance += 0x10000) {
+        for (const i64 sign : {1, -1}) {
+            const u64 address = base + sign * i64(distance);
+            if (void* got = VirtualAlloc(reinterpret_cast<void*>(address), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) {
+                if (u64(got) == address) return static_cast<u8*>(got);
+                VirtualFree(got, 0, MEM_RELEASE);
+            }
+        }
+    }
+    return nullptr;
+}
+#endif
+}  // namespace
+
+void ApplyCheats(Core::Module& eboot, const Config& config) {
+    std::vector<MemoryPatch> patches;
+    std::string report;
+    const u64 base = eboot.GetBaseAddress();
+#ifdef _WIN32
+    u8* stubs = nullptr;
+    u32 used = 0;
+#endif
+    for (const auto& cheat : Cheats()) {
+        if (!(config.*cheat.enabled)) continue;
+        std::vector<MemoryPatch> mine;
+        bool ok = true;
+        for (const auto& site : cheat.sites) {
+            const u64 match = FindPattern(eboot, site.pattern);
+            const u64 address = match + site.at;
+            if (!match || !eboot.Contains(address - base, site.original.size()) ||
+                std::memcmp(reinterpret_cast<const void*>(address), site.original.data(), site.original.size())) {
+                ok = false;
+                break;
+            }
+            if (site.replacement.size() == site.original.size()) {
+                mine.push_back({address - base, site.original, site.replacement});
+                continue;
+            }
+#ifdef _WIN32
+            if (!stubs) stubs = AllocateNear(base, 4096);
+            if (!stubs || used + 128 > 4096) { ok = false; break; }
+            // The stub keeps the red zone and the registers: replacement code, then the jump back after the patched instruction.
+            u8* stub = stubs + used;
+            used += 128;
+            std::vector<u8> code{0x48, 0x8d, 0x64, 0x24, 0x80};  // lea rsp, [rsp-0x80]
+            code.insert(code.end(), site.replacement.begin(), site.replacement.end());
+            code.insert(code.end(), {0x48, 0x8d, 0xa4, 0x24, 0x80, 0, 0, 0, 0xff, 0x25, 0, 0, 0, 0});  // lea rsp, [rsp+0x80]; jmp [rip]
+            const u64 resume = address + site.original.size();
+            code.insert(code.end(), reinterpret_cast<const u8*>(&resume), reinterpret_cast<const u8*>(&resume) + 8);
+            std::memcpy(stub, code.data(), code.size());
+            const i64 delta = i64(stub) - i64(address + 5);
+            if (delta < INT32_MIN || delta > INT32_MAX) { ok = false; break; }
+            std::vector<u8> jump{0xe9};
+            const i32 rel = i32(delta);
+            jump.insert(jump.end(), reinterpret_cast<const u8*>(&rel), reinterpret_cast<const u8*>(&rel) + 4);
+            jump.resize(site.original.size(), 0x90);
+            mine.push_back({address - base, site.original, std::move(jump)});
+#else
+            ok = false;
+#endif
+        }
+        report += std::format("{}{}: {}", report.empty() ? "" : "; ", cheat.name, ok ? "on" : "not found in this game code");
+        if (ok) patches.insert(patches.end(), mine.begin(), mine.end());
+    }
+    if (patches.empty()) {
+        if (!report.empty()) Log("Cheats: " + report);
+        return;
+    }
+    MemoryPatcher(eboot).Apply(patches);
+    Log("Cheats: " + report);
 }
 
 void ApplyGamePatches(Core::Module& eboot, const Config& config) {
@@ -154,6 +290,7 @@ void ApplyGamePatches(Core::Module& eboot, const Config& config) {
         value(0x1f2c07, 0x980000, 0x900000);
     }
     MemoryPatcher(eboot).Apply(patches);
+    ApplyCheats(eboot, config);
     if (DebugEnabled()) Log(std::format("Applied {} game patch sites: {} at {:.2f} fps; 64 manual saves", patches.size(), resolution.name, GameFrameRate(config.fps)));
 }
 }
