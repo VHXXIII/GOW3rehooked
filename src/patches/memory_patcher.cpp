@@ -127,7 +127,7 @@ u64 FindPattern(Core::Module& module, const char* pattern) {
     const auto info = module.GetModuleInfo();
     for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
         const auto& seg = info.segments[i];
-        if (!(seg.prot & 4) || seg.size < bytes.size()) continue;
+        if (!(seg.prot & 1) || seg.size < bytes.size()) continue;
         const auto* mem = reinterpret_cast<const u8*>(seg.address);
         for (u64 at = 0; at + bytes.size() <= seg.size; ++at) {
             size_t k = 0;
@@ -148,7 +148,7 @@ u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8
     };
     for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
         const auto& seg = info.segments[i];
-        if (!(seg.prot & 4)) continue;
+        if (!(seg.prot & 1)) continue;
         const auto* mem = reinterpret_cast<const u8*>(seg.address);
         for (u64 at = 0; at + size + 16 <= seg.size;) {
             if (mem[at] != 0xcc) { ++at; continue; }
