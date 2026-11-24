@@ -7,6 +7,7 @@
 #include "orbis/core/loader/elf.h"
 #include "orbis/core/memory.h"
 #include <algorithm>
+#include <functional>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -142,6 +143,29 @@ u64 FindPattern(Core::Module& module, const char* pattern) {
 // executable segment. `fill` is the byte that is there now.
 u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8& fill) {
     const auto info = module.GetModuleInfo();
+    {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            std::vector<std::pair<u64, u64>> runs;  // length, rva
+            for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
+                const auto& seg = info.segments[i];
+                if (!(seg.prot & 1)) continue;
+                const auto* mem = reinterpret_cast<const u8*>(seg.address);
+                for (u64 at = 0; at < seg.size;) {
+                    if (mem[at] != 0xcc) { ++at; continue; }
+                    u64 end = at;
+                    while (end < seg.size && mem[end] == 0xcc) ++end;
+                    runs.push_back({end - at, seg.address + at - module.GetBaseAddress()});
+                    at = end;
+                }
+            }
+            std::ranges::sort(runs, std::greater<>());
+            std::string text = std::format("Cheats: {} runs of 0xCC;", runs.size());
+            for (size_t i = 0; i < runs.size() && i < 6; ++i) text += std::format(" {}@{:x}", runs[i].first, runs[i].second);
+            Log(text);
+        }
+    }
     const auto free = [&](u64 start) {
         return module.Contains(start - module.GetBaseAddress(), size) &&  // inside the mapped image, not just the segment's page rounding
                std::ranges::none_of(claimed, [&](u64 c) { return c < start + size && start < c + 128; });
@@ -154,7 +178,7 @@ u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8
             if (mem[at] != 0xcc) { ++at; continue; }
             u64 end = at;
             while (end < seg.size && mem[end] == 0xcc) ++end;
-            for (u64 start = (seg.address + at + 15) & ~15ull; start + size <= seg.address + end; start += 16)  // 16-byte aligned, inside the run
+            for (u64 start = seg.address + at; start + size <= seg.address + end; start += 16)  // anywhere in the run (the stub needs no alignment)
                 if (free(start)) return fill = 0xcc, start;
             at = end;
         }
