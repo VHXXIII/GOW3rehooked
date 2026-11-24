@@ -9,6 +9,7 @@
 #include <bit>
 #include <cstring>
 #include <format>
+#include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -137,8 +138,8 @@ u64 FindPattern(Core::Module& module, const char* pattern) {
 // Executable memory a 32-bit jump from the module reaches.
 u8* AllocateNear(u64 base, u64 size) {
     for (u64 distance = 0x10000; distance < 0x70000000; distance += 0x10000) {
-        for (const s64 sign : {1, -1}) {
-            const u64 address = base + sign * s64(distance);
+        for (const std::int64_t sign : {1, -1}) {
+            const u64 address = base + sign * std::int64_t(distance);
             if (void* got = VirtualAlloc(reinterpret_cast<void*>(address), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) {
                 if (u64(got) == address) return static_cast<u8*>(got);
                 VirtualFree(got, 0, MEM_RELEASE);
@@ -186,10 +187,10 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             const u64 resume = address + site.original.size();
             code.insert(code.end(), reinterpret_cast<const u8*>(&resume), reinterpret_cast<const u8*>(&resume) + 8);
             std::memcpy(stub, code.data(), code.size());
-            const s64 delta = s64(stub) - s64(address + 5);
+            const std::int64_t delta = std::int64_t(stub) - std::int64_t(address + 5);
             if (delta < INT32_MIN || delta > INT32_MAX) { ok = false; break; }
             std::vector<u8> jump{0xe9};
-            const s32 rel = s32(delta);
+            const std::int32_t rel = std::int32_t(delta);
             jump.insert(jump.end(), reinterpret_cast<const u8*>(&rel), reinterpret_cast<const u8*>(&rel) + 4);
             jump.resize(site.original.size(), 0x90);
             mine.push_back({address - base, site.original, std::move(jump)});
