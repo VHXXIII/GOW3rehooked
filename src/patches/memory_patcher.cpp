@@ -134,35 +134,43 @@ u64 FindPattern(Core::Module& module, const char* pattern) {
     return 0;
 }
 
-#ifdef _WIN32
-// Executable memory a 32-bit jump from the module reaches.
-u8* AllocateNear(u64 base, u64 size) {
-    for (u64 distance = 0x10000; distance < 0x70000000; distance += 0x10000) {
-        for (const std::int64_t sign : {1, -1}) {
-            const u64 address = base + sign * std::int64_t(distance);
-            if (void* got = VirtualAlloc(reinterpret_cast<void*>(address), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) {
-                if (u64(got) == address) return static_cast<u8*>(got);
-                VirtualFree(got, 0, MEM_RELEASE);
-            }
+// A run of 0xCC padding between functions in the module's executable segments: room for a stub that a 32-bit jump reaches.
+u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed) {
+    const auto info = module.GetModuleInfo();
+    for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
+        const auto& seg = info.segments[i];
+        if (!(seg.prot & 4)) continue;
+        const auto* mem = reinterpret_cast<const u8*>(seg.address);
+        for (u64 at = 0; at + size + 16 <= seg.size;) {
+            if (mem[at] != 0xcc) { ++at; continue; }
+            u64 end = at;
+            while (end < seg.size && mem[end] == 0xcc) ++end;
+            const u64 start = (seg.address + at + 15) & ~15ull;  // 16-byte aligned, inside the run
+            if (start + size <= seg.address + end && std::ranges::none_of(claimed, [&](u64 c) { return c < start + size && start < c + 128; })) return start;
+            at = end;
         }
     }
-    return nullptr;
+    return 0;
 }
-#endif
 }  // namespace
 
 void ApplyCheats(Core::Module& eboot, const Config& config) {
     std::vector<MemoryPatch> patches;
     std::string report;
     const u64 base = eboot.GetBaseAddress();
-#ifdef _WIN32
-    u8* stubs = nullptr;
-    u32 used = 0;
-#endif
+    std::vector<u64> claimed;
+    {
+        const auto info = eboot.GetModuleInfo();
+        std::string seg_report;
+        for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i)
+            seg_report += std::format(" [{:x}+{:x} prot {}]", info.segments[i].address - base, info.segments[i].size, info.segments[i].prot);
+        Log("Cheats: module segments" + seg_report);
+    }
     for (const auto& cheat : Cheats()) {
         if (!(config.*cheat.enabled)) continue;
         std::vector<MemoryPatch> mine;
         bool ok = true;
+        std::string reason = "bytes not found in the game code";
         for (const auto& site : cheat.sites) {
             const u64 match = FindPattern(eboot, site.pattern);
             const u64 address = match + site.at;
@@ -175,30 +183,25 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
                 mine.push_back({address - base, site.original, site.replacement});
                 continue;
             }
-#ifdef _WIN32
-            if (!stubs) stubs = AllocateNear(base, 4096);
-            if (!stubs || used + 128 > 4096) { ok = false; break; }
             // The stub keeps the red zone and the registers: replacement code, then the jump back after the patched instruction.
-            u8* stub = stubs + used;
-            used += 128;
+            const u64 stub = FindCave(eboot, 64, claimed);
+            if (!stub) { reason = "no free code space"; ok = false; break; }
+            claimed.push_back(stub);
             std::vector<u8> code{0x48, 0x8d, 0x64, 0x24, 0x80};  // lea rsp, [rsp-0x80]
             code.insert(code.end(), site.replacement.begin(), site.replacement.end());
             code.insert(code.end(), {0x48, 0x8d, 0xa4, 0x24, 0x80, 0, 0, 0, 0xff, 0x25, 0, 0, 0, 0});  // lea rsp, [rsp+0x80]; jmp [rip]
             const u64 resume = address + site.original.size();
             code.insert(code.end(), reinterpret_cast<const u8*>(&resume), reinterpret_cast<const u8*>(&resume) + 8);
-            std::memcpy(stub, code.data(), code.size());
             const std::int64_t delta = std::int64_t(stub) - std::int64_t(address + 5);
-            if (delta < INT32_MIN || delta > INT32_MAX) { ok = false; break; }
+            if (delta < INT32_MIN || delta > INT32_MAX) { reason = "stub out of reach"; ok = false; break; }
             std::vector<u8> jump{0xe9};
             const std::int32_t rel = std::int32_t(delta);
             jump.insert(jump.end(), reinterpret_cast<const u8*>(&rel), reinterpret_cast<const u8*>(&rel) + 4);
             jump.resize(site.original.size(), 0x90);
+            mine.push_back({stub - base, std::vector<u8>(code.size(), 0xcc), std::move(code)});
             mine.push_back({address - base, site.original, std::move(jump)});
-#else
-            ok = false;
-#endif
         }
-        report += std::format("{}{}: {}", report.empty() ? "" : "; ", cheat.name, ok ? "on" : "not found in this game code");
+        report += std::format("{}{}: {}", report.empty() ? "" : "; ", cheat.name, ok ? "on" : reason);
         if (ok) patches.insert(patches.end(), mine.begin(), mine.end());
     }
     if (patches.empty()) {
