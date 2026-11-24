@@ -140,7 +140,8 @@ u64 FindPattern(Core::Module& module, const char* pattern) {
 u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8& fill) {
     const auto info = module.GetModuleInfo();
     const auto free = [&](u64 start) {
-        return std::ranges::none_of(claimed, [&](u64 c) { return c < start + size && start < c + 128; });
+        return module.Contains(start - module.GetBaseAddress(), size) &&  // inside the mapped image, not just the segment's page rounding
+               std::ranges::none_of(claimed, [&](u64 c) { return c < start + size && start < c + 128; });
     };
     for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i) {
         const auto& seg = info.segments[i];
