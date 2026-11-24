@@ -202,6 +202,7 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             const u64 stub = FindCave(eboot, site.bare ? 16 : 64, claimed, fill);
             if (!stub) { reason = "no free code space"; ok = false; break; }
             claimed.push_back(stub);
+            Log(std::format("Cheats[gated-v2]: {} stub at {:x} (fill {:02x}), site at {:x}", cheat.name, stub - base, fill, address - base));
             const u64 resume = address + site.original.size();
             std::vector<u8> code;
             if (!site.bare) code = {0x48, 0x8d, 0x64, 0x24, 0x80};  // lea rsp, [rsp-0x80]
