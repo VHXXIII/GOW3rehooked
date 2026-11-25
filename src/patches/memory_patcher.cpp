@@ -189,6 +189,37 @@ u64 FindCave(Core::Module& module, u32 size, const std::vector<u64>& claimed, u8
     }
     return 0;
 }
+
+// Stubs live in a block of guest memory of their own mapped right behind the image (the game code has no gap longer than 7 bytes),
+// so a 32-bit jump reaches it. The block is written directly: it is outside the module, so MemoryPatcher does not handle it.
+struct StubBlock {
+    u64 base = 0, used = 0, size = 0;
+};
+u64 AllocStub(Core::Module& module, u32 size) {
+    static StubBlock block;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        const auto info = module.GetModuleInfo();
+        u64 end = module.GetBaseAddress();
+        for (u32 i = 0; i < info.num_segments && i < info.segments.size(); ++i)
+            end = std::max<u64>(end, info.segments[i].address + info.segments[i].size);
+        constexpr u64 kSize = 0x4000;
+        void* mapped = nullptr;
+        const s32 rc = Core::Memory::Instance()->MapMemory(&mapped, (end + 0x3fff) & ~0x3fffull, kSize,
+                                                             Core::MemoryProt::CpuReadWrite | Core::MemoryProt::CpuExec,
+                                                             Core::MemoryMapFlags::NoFlags, Core::VMAType::System, "gow3 cheat stubs");
+        const u64 at = reinterpret_cast<u64>(mapped);
+        if (rc || at < module.GetBaseAddress() || at + kSize - module.GetBaseAddress() > 0x7fff0000ull)
+            Log(std::format("Cheats: no executable memory near the game code (rc {}, at {:x})", rc, at));
+        else
+            block = {at, 0, kSize}, Log(std::format("Cheats: stub block at {:x} (rva {:x})", at, at - module.GetBaseAddress()));
+    }
+    if (!block.base || block.used + size > block.size) return 0;
+    const u64 at = block.base + block.used;
+    block.used += (size + 15) & ~15ull;
+    return at;
+}
 }  // namespace
 
 void ApplyCheats(Core::Module& eboot, const Config& config) {
@@ -223,9 +254,8 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             }
             // The stub: the replacement code, then the jump back after the patched instruction (a wrapper keeps the red zone and flags).
             u8 fill = 0;
-            const u64 stub = FindCave(eboot, site.bare ? 16 : 64, claimed, fill);
+            const u64 stub = AllocStub(eboot, site.bare ? 16 : 64);
             if (!stub) { reason = "no free code space"; ok = false; break; }
-            claimed.push_back(stub);
             Log(std::format("Cheats[gated-v2]: {} stub at {:x} (fill {:02x}), site at {:x}", cheat.name, stub - base, fill, address - base));
             const u64 resume = address + site.original.size();
             std::vector<u8> code;
@@ -256,7 +286,7 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
             const std::int32_t rel = std::int32_t(delta);
             jump.insert(jump.end(), reinterpret_cast<const u8*>(&rel), reinterpret_cast<const u8*>(&rel) + 4);
             jump.resize(site.original.size(), 0x90);
-            mine.push_back({stub - base, std::vector<u8>(code.size(), fill), std::move(code)});
+            std::memcpy(reinterpret_cast<void*>(stub), code.data(), code.size());  // not live until the site's jump is written
             mine.push_back({address - base, site.original, std::move(jump)});
         }
         report += std::format("{}{}: {}", report.empty() ? "" : "; ", cheat.name, ok ? "on" : reason);
@@ -273,8 +303,8 @@ void ApplyCheats(Core::Module& eboot, const Config& config) {
         std::thread([&eboot, gate] {
             std::this_thread::sleep_for(std::chrono::seconds(45));
             const u8 one = 1;
-            const bool ok = eboot.memory->TryWriteBacking(reinterpret_cast<void*>(gate), &one, 1);
-            Log(ok ? "Cheats: health gate opened" : "Cheats: health gate could not be opened");
+            *reinterpret_cast<volatile u8*>(gate) = one;
+            Log("Cheats: health gate opened");
         }).detach();
     }
 }
